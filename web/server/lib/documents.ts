@@ -49,6 +49,11 @@ export interface SegmentView {
 
 export interface DocumentDetail extends DocumentSummary {
   version: { number: number; releasedAt: string | null };
+  /**
+   * The version's whole Markdown. The viewer renders it in one piece (so references and footnotes
+   * resolve) and finds each segment in it by its text.
+   */
+  markdown: string;
   versions: { number: number; releasedAt: string | null }[];
   segments: SegmentView[];
 }
@@ -82,7 +87,11 @@ export function parseNewDocument(
   const description = typeof input.description === "string"
     ? input.description.trim()
     : "";
-  const markdown = typeof input.markdown === "string" ? input.markdown : "";
+  // Line endings normalised here, once, so the stored source and the segments sliced from it
+  // agree byte for byte — the viewer finds each segment in the source by its text.
+  const markdown = typeof input.markdown === "string"
+    ? input.markdown.replace(/\r\n?/g, "\n")
+    : "";
   const closesAtRaw = input.closesAt;
 
   if (!title || title.length > TITLE_MAX_LENGTH) {
@@ -252,6 +261,7 @@ export async function getDocument(
   return {
     ...summary,
     version: { number: version.number, releasedAt: version.released_at },
+    markdown: version.source_md,
     versions: released.map((v) => ({
       number: v.number,
       releasedAt: v.released_at,

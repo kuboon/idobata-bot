@@ -50,7 +50,7 @@
     "@cloudflare/build-output-utils": "npm:@cloudflare/build-output-utils@0.9.1",
     "@cloudflare/config": "npm:@cloudflare/config@0.25.0",
     "@kuboon/dpop": "jsr:@kuboon/dpop@^0.1.2",
-    "@kuboon/md": "jsr:@kuboon/md@^0.7.0",
+    "@kuboon/md": "jsr:@kuboon/md@^0.8.0",
     "@lightpanda/browser": "npm:@lightpanda/browser@^1.6.0",
     "@remix-kbn/assets-deno": "jsr:@remix-kbn/assets-deno@^0.9.0",
     "@remix-kbn/data-table-d1": "jsr:@remix-kbn/data-table-d1@^0.1.0",
@@ -64,7 +64,11 @@
     "canvaskit-wasm": "npm:canvaskit-wasm@^0.40.0",
     "cf": "npm:cf@1.0.0-beta.16",
     "jose": "jsr:@panva/jose@^6.2.3",
-    "puppeteer-core": "npm:puppeteer-core@^23.11.1"
+    "mdast": "npm:@types/mdast@^4.0.4",
+    "puppeteer-core": "npm:puppeteer-core@^23.11.1",
+    "remark-gfm": "npm:remark-gfm@^4.0.1",
+    "remark-parse": "npm:remark-parse@^11.0.0",
+    "unified": "npm:unified@^11.0.5"
   },
   "fmt": {
     "exclude": [

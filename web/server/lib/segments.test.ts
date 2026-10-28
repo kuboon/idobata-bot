@@ -89,3 +89,26 @@ Deno.test("CRLF and surrounding blank lines are normalised", () => {
 Deno.test("an empty document has no segments", () => {
   assertEquals(parseSegments("  \n\n---\n"), []);
 });
+
+Deno.test("definitions and raw HTML are not segments", () => {
+  assertEquals(
+    kinds(`段落 [リンク][ref]。
+
+[ref]: https://example.com
+
+<div>生の HTML</div>
+
+[^1]: 脚注`),
+    [
+      ["paragraph", "段落 [リンク][ref]。"],
+      ["paragraph", "[^1]: 脚注"],
+    ],
+  );
+});
+
+Deno.test("segment text is sliced verbatim from the source", () => {
+  const md = "# 題\n\n- a\n  - b\n\n本文 **強調**";
+  for (const { text } of parseSegments(md)) {
+    assertEquals(md.includes(text), true, text);
+  }
+});

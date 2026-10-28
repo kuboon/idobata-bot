@@ -77,6 +77,7 @@ Deno.test("a registered document is listed and shown with its segments", async (
     number: 1,
     releasedAt: document.versions[0].releasedAt,
   });
+  assertEquals(document.markdown, MARKDOWN);
   assertEquals(
     document.segments.map((s: { kind: string; text: string }) => [
       s.kind,
@@ -93,6 +94,21 @@ Deno.test("a registered document is listed and shown with its segments", async (
     document.segments.map((s: { key: string }) => s.key),
   );
   assertEquals(keys.size, 4);
+});
+
+Deno.test("CRLF is stored as LF, so segments are found in the source", async () => {
+  const { fetchDpop, signedIn } = await setup();
+  const created = await fetchDpop(
+    appUrl("/api/docs"),
+    post({ title: "t", markdown: "# 題\r\n\r\n本文\r\n" }, await signedIn()),
+  );
+  const { id } = await created.json();
+  const { document } = await (await fetchDpop(appUrl(`/api/docs/${id}`)))
+    .json();
+  assertEquals(document.markdown, "# 題\n\n本文\n");
+  for (const segment of document.segments) {
+    assert(document.markdown.includes(segment.text));
+  }
 });
 
 Deno.test("a past deadline shows the document as closed", async () => {
