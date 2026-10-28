@@ -13,7 +13,7 @@
  *   reaches them, and they are not in `entryPoints`.
  */
 
-import { get, post, route } from "@remix-run/fetch-router/routes";
+import { get, patch, post, route } from "@remix-run/fetch-router/routes";
 
 export const routes = route("", {
   home: get("/"),
@@ -23,5 +23,10 @@ export const routes = route("", {
   api: route("api", {
     /** Server-initiated push fan-out (delegates to the IdP). Not DPoP-protected. */
     notify: post("/notify"),
+    /** The signed-in user: DPoP proof and IdP token required. */
+    me: route("me", {
+      show: get("/"),
+      update: patch("/"),
+    }),
   }),
 });

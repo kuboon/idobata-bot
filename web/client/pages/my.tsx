@@ -1,6 +1,7 @@
 import { css, type Handle } from "@remix-run/component";
 
 import { IDP_ORIGIN } from "../idp.ts";
+import { ProfileCard } from "../islands/profile_card.tsx";
 import { PushCard } from "../islands/push_card.tsx";
 import { SignInCard } from "../islands/signin_card.tsx";
 import { cardStyle } from "../theme.ts";
@@ -25,6 +26,8 @@ export default function My(_handle: Handle) {
       </p>
 
       <SignInCard idpOrigin={IDP_ORIGIN} />
+
+      <ProfileCard />
 
       <PushCard idpOrigin={IDP_ORIGIN} />
 

@@ -37,6 +37,7 @@ import { routes } from "../client/routes.ts";
 import * as Home from "../client/pages/index.tsx";
 import * as My from "../client/pages/my.tsx";
 
+import { createMeController } from "./controllers/api/me.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
 
@@ -121,7 +122,12 @@ const top = createController(routes, {
   },
 });
 
-/** The server-only API. Static builds never reach it — see the header. */
+/**
+ * The server-only API. Static builds never reach it — see the header.
+ *
+ * `routes.api.me` is a map of its own, owned by its controller, because the auth middleware
+ * belongs to those routes and not to `notify`.
+ */
 const api = createController(routes.api, {
   actions: {
     notify: notifyAction,
@@ -130,6 +136,7 @@ const api = createController(routes.api, {
 
 router.map(routes, top);
 router.map(routes.api, api);
+router.map(routes.api.me, createMeController());
 
 router.get("/static/*path", ({ request }) => staticFiles.fetch(request));
 router.get(`${assetsPath}/*path`, ({ request }) => assets.fetch(request));

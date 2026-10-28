@@ -33,6 +33,12 @@ class DpopSessionStore extends TypedEventTarget<SessionEventMap> {
   thumbprint = "";
   /** IdP user id, or `null` when signed out / not yet loaded. */
   userId: string | null = null;
+  /**
+   * The IdP's token for this key (`jws` from `/session`), sent to this app's API as
+   * `Authorization: DPoP <token>`. Good for an hour; {@link apiFetch} fetches a fresh one when the
+   * API turns it down.
+   */
+  token: string | null = null;
   /** True once the initial probe has resolved (success or failure). */
   ready = false;
 
@@ -50,18 +56,7 @@ class DpopSessionStore extends TypedEventTarget<SessionEventMap> {
         const { fetchDpop, thumbprint } = await init();
         this.fetchDpop = fetchDpop;
         this.thumbprint = thumbprint;
-        try {
-          const response = await fetchDpop(`${IDP_ORIGIN}/session`);
-          if (response.ok) {
-            const session = (await response.json()) as {
-              userId: string | null;
-            };
-            this.userId = session.userId ?? null;
-          }
-        } catch {
-          // Signed out: the cross-origin probe can 401 or reject.
-          this.userId = null;
-        }
+        await this.#probe();
       } catch {
         // DPoP init failed (e.g. no IndexedDB) — stay signed-out but ready.
       } finally {
@@ -76,7 +71,57 @@ class DpopSessionStore extends TypedEventTarget<SessionEventMap> {
     if (!this.fetchDpop) return;
     await this.fetchDpop(`${IDP_ORIGIN}/session/logout`, { method: "POST" });
     this.userId = null;
+    this.token = null;
     this.#emitChange();
+  }
+
+  /**
+   * Calls this app's API: DPoP-signed always, with the IdP token when signed in.
+   *
+   * A `401` while signed in usually means the hour-long token ran out, so the session is probed
+   * once more and the request retried with the fresh token. A second `401` is returned as is.
+   *
+   * @param path An app-relative URL, e.g. `routes.api.me.show.href()`
+   * @param init As for `fetch`
+   * @returns The API's response
+   */
+  async apiFetch(path: string, init: RequestInit = {}): Promise<Response> {
+    await this.load();
+    const fetchDpop = this.fetchDpop;
+    if (!fetchDpop) throw new Error("DPoP を初期化できませんでした。");
+    const url = new URL(path, globalThis.location.origin).href;
+    const send = () => {
+      const headers = new Headers(init.headers);
+      if (this.token) headers.set("authorization", `DPoP ${this.token}`);
+      return fetchDpop(url, { ...init, headers });
+    };
+
+    const response = await send();
+    if (response.status !== 401 || !this.token) return response;
+    await response.body?.cancel();
+    await this.#probe();
+    this.#emitChange();
+    return send();
+  }
+
+  /** Asks the IdP who this key belongs to, and for a fresh token. */
+  async #probe(): Promise<void> {
+    if (!this.fetchDpop) return;
+    try {
+      const response = await this.fetchDpop(`${IDP_ORIGIN}/session`);
+      if (response.ok) {
+        const session = (await response.json()) as {
+          userId: string | null;
+          jws?: string;
+        };
+        this.userId = session.userId ?? null;
+        this.token = session.userId ? session.jws ?? null : null;
+      }
+    } catch {
+      // Signed out: the cross-origin probe can 401 or reject.
+      this.userId = null;
+      this.token = null;
+    }
   }
 
   #emitChange(): void {

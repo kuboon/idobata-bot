@@ -45,6 +45,25 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 [RFC 7521]: https://www.rfc-editor.org/rfc/rfc7521
 [RFC 7523]: https://www.rfc-editor.org/rfc/rfc7523
 
+## 認証 (API)
+
+RP 側にセッションは持たない（`docs/design.md`
+§3）。`web/server/middleware/auth.ts`:
+
+- `dpopClient()` — 全 API に付ける。`DPoP` proof を検証し、鍵の thumbprint を
+  `context.get(Client)` に置く。
+- `requireUser()` — ログイン必須の API に、`dpopClient()` の後に付ける。
+  `Authorization: DPoP <jws>`（IdP の `/session` が返す token）を IdP の JWKS で
+  検証し、`cnf.jkt` が proof の鍵と一致することを確かめて `context.get(User)` に
+  置く。初回は `users` を作る（nickname の初期値は IdP の値）。
+- ブラウザは `sessionStore.apiFetch(path, init)`（`web/client/session.ts`）で
+  呼ぶ。proof と token を付け、401 なら `/session` を取り直して 1
+  回だけ再送する。
+- テストは `@kuboon/dpop` の
+  `init({ keyStore: new InMemoryKeyRepository(), fetch })` で proof
+  を作り、`jose` のローカル鍵で IdP の token を作る
+  （`web/server/controllers/api/me.test.ts`）。
+
 ## データベース (D1)
 
 D1 を `@remix-run/data-table` + `@remix-kbn/data-table-d1` で使う。
