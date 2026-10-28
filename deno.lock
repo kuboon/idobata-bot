@@ -6,6 +6,8 @@
     "jsr:@kuboon/md@0.7": "0.7.0",
     "jsr:@panva/jose@^6.2.3": "6.2.12",
     "jsr:@remix-kbn/assets-deno@0.9": "0.9.0",
+    "jsr:@remix-kbn/data-table-d1@*": "0.1.0",
+    "jsr:@remix-kbn/data-table-d1@0.1": "0.1.0",
     "jsr:@remix-kbn/ssg@*": "0.13.0",
     "jsr:@remix-kbn/ssg@0.13": "0.13.0",
     "jsr:@std/assert@^1.0.19": "1.0.19",
@@ -92,6 +94,12 @@
         "jsr:@std/fs",
         "npm:cjs-module-lexer",
         "npm:es-module-lexer@^2.3.2"
+      ]
+    },
+    "@remix-kbn/data-table-d1@0.1.0": {
+      "integrity": "3152a5288f6f46f658c89ae79a8ca7d202b2e3fc289b306a3a1b3c9d9928a003",
+      "dependencies": [
+        "npm:@remix-run/data-table"
       ]
     },
     "@remix-kbn/ssg@0.13.0": {
@@ -3007,6 +3015,7 @@
       "jsr:@kuboon/md@0.7",
       "jsr:@panva/jose@^6.2.3",
       "jsr:@remix-kbn/assets-deno@0.9",
+      "jsr:@remix-kbn/data-table-d1@0.1",
       "jsr:@remix-kbn/ssg@0.13",
       "jsr:@std/assert@^1.0.19",
       "npm:@cloudflare/build-output-utils@0.9.1",

@@ -12,7 +12,10 @@
 import { cop } from "@remix-run/cop-middleware";
 import { createController, createRouter } from "@remix-run/fetch-router";
 
+import type { D1DatabaseBinding } from "@remix-kbn/data-table-d1";
+
 import { routes } from "../client/routes.ts";
+import { useDatabase } from "./db/mod.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
 
@@ -33,4 +36,21 @@ router.map(
   }) as never,
 );
 
-export default { fetch: (request: Request) => router.fetch(request) };
+/** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
+interface WorkerEnv {
+  DB?: D1DatabaseBinding;
+}
+
+let databaseSet = false;
+
+export default {
+  fetch(request: Request, env?: WorkerEnv): Promise<Response> {
+    // The binding only arrives with a request, so the database is set on the first one. The
+    // tests call this without an env, and set their own database.
+    if (!databaseSet && env?.DB) {
+      useDatabase(env.DB);
+      databaseSet = true;
+    }
+    return router.fetch(request);
+  },
+};

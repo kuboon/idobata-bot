@@ -45,6 +45,25 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 [RFC 7521]: https://www.rfc-editor.org/rfc/rfc7521
 [RFC 7523]: https://www.rfc-editor.org/rfc/rfc7523
 
+## データベース (D1)
+
+D1 を `@remix-run/data-table` + `@remix-kbn/data-table-d1` で使う。
+
+- スキーマは `db/migrations/<YYYYMMDDHHmmss>_<name>/up.sql`（と `down.sql`）。
+  `web/server/db/schema.ts` の `table()` 定義と列を揃える（`schema.test.ts` が
+  全テーブルを往復させて確かめる）。
+- `web/server/db/mod.ts` の `getDb()` が DB を返す。入口ごとに `useDatabase()`
+  で 設定する: Worker は初回リクエストで `env.DB`、`router.tsx` は
+  `web/server/db/local.ts` の `openLocalDatabase()`（`LOCAL_DB` のファイル、
+  未設定ならメモリ。開くたびにマイグレーションを当てる）。`db/local.ts` は
+  `node:sqlite` を使うので `worker.ts` から import しない。
+- D1 には対話的トランザクションが無い。`db.transaction()` は書き込みを溜めて
+  `batch()` 1 回で送るので、中では書き込みの戻り値を使わない・書き込みの後に
+  読まない・入れ子にしない。
+- `deno task db migrate`（ローカルの `data/app.db`）、
+  `deno task db migrate --remote`（本番。`CLOUDFLARE_D1_DATABASE_ID` と D1 編集
+  権限のある `CLOUDFLARE_API_TOKEN` が要る）。
+
 ## 環境変数
 
 env アクセスは `web/server/config.ts` に集約し、ホスト非依存にしてある。
@@ -64,6 +83,8 @@ Deno で catch 不能なエラーになる)。env は top-level await
 - `RP_SIGNING_KEY_JWK` — 任意。ES256 秘密鍵 (JWK JSON)。未設定ならプロセス毎に
   生成
   (開発用)。本番では固定鍵を設定し、再起動で鍵がローテートしないようにする。
+- `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
+  （`deno task dev` は `data/app.db`）。未設定ならメモリ。
 - `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`
   を絶対 URL にする（`.github/workflows/cloudflare.yml` が設定）。未設定なら
   相対パス。

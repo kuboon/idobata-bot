@@ -28,6 +28,7 @@ import { createFileTree, githubPages } from "@remix-kbn/ssg/site";
 import type { FileServerBehavior } from "@remix-kbn/ssg/site";
 
 import { assets, assetsPath } from "./assets.ts";
+import { openLocalDatabase } from "./db/local.ts";
 import { clientRuntime } from "./runtime.ts";
 import { ogImage, ogPaths, serveOgImage } from "./og/mod.ts";
 import { Layout, type PageModule } from "../client/layout.tsx";
@@ -38,6 +39,13 @@ import * as My from "../client/pages/my.tsx";
 
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
+
+/**
+ * The database: a local SQLite file when `LOCAL_DB` names one (`deno task dev` does), otherwise a
+ * fresh in-memory one — which is what the tests and the static build get. Either way it is
+ * migrated on open. On Cloudflare the Worker uses the D1 binding instead; see `worker.ts`.
+ */
+await openLocalDatabase(Deno.env.get("LOCAL_DB") ?? ":memory:");
 
 /**
  * How the static build lays out its files: `/my` as `my/index.html`, which is what Workers static
