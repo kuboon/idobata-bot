@@ -32,10 +32,12 @@ import { openLocalDatabase } from "./db/local.ts";
 import { clientRuntime } from "./runtime.ts";
 import { ogImage, ogPaths, serveOgImage } from "./og/mod.ts";
 import { Layout, type PageModule } from "../client/layout.tsx";
-import { routes } from "../client/routes.ts";
+import { DOCUMENT_SHELL_ID, routes } from "../client/routes.ts";
 
+import * as DocumentPage from "../client/pages/document.tsx";
 import * as Home from "../client/pages/index.tsx";
 import * as My from "../client/pages/my.tsx";
+import * as NewDocument from "../client/pages/new.tsx";
 
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
@@ -119,6 +121,20 @@ const top = createController(routes, {
   actions: {
     home: pageAction(routes.home, Home),
     my: pageAction(routes.my, My),
+    newDocument: pageAction(routes.newDocument, NewDocument),
+    // One page for every document, with no card of its own: the Worker writes the document's own
+    // title over the generic one, and a card per document would need drawing per document.
+    document: (context) =>
+      context.render(
+        <Layout
+          title={DocumentPage.title}
+          description={DocumentPage.description}
+          image={null}
+          script={clientRuntime}
+        >
+          <DocumentPage.default />
+        </Layout>,
+      ),
     jwks: jwksAction,
   },
 });
@@ -161,13 +177,15 @@ router.get(
  *
  * Pages are reached by following links from `/`. The exceptions are things nothing links to in
  * the static HTML: `/my` (the nav's link to it is drawn by the sign-in island, only once signed
- * in), the social cards (an `og:image` is an absolute URL meant for someone else's server) and the
+ * in), the document page's shell (every `/d/:docId` is served from it, and the links to documents
+ * are drawn by the list island), the social cards (an `og:image` is an absolute URL meant for someone else's server) and the
  * service worker (the push manager registers it by URL from script). `/api/*` is deliberately
  * absent.
  */
 export const entryPoints: readonly string[] = [
   "/",
   routes.my.href(),
+  routes.document.href({ docId: DOCUMENT_SHELL_ID }),
   ...ogPaths(),
   "/sw.js",
 ];

@@ -19,7 +19,9 @@ export default defineConfig({
       htmlHandling: "auto-trailing-slash",
       notFoundHandling: "none",
       // Only these reach the Worker; every other path is a static file.
-      runWorkerFirst: ["/api/*", "/.well-known/jwks.json"],
+      // `/d/*` is the document page: the Worker serves the static shell with the document's
+      // title written in (`web/server/document_shell.ts`).
+      runWorkerFirst: ["/api/*", "/.well-known/jwks.json", "/d/*"],
     },
     env: {
       IDP_ORIGIN: bindings.text("https://id.kbn.one"),
@@ -30,6 +32,7 @@ export default defineConfig({
       // Migrated ahead of a deploy with `deno task db migrate --remote` (needs
       // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission).
       DB: bindings.d1({ name: "idobata-bot" }),
+      ASSETS: bindings.assets(),
     },
   },
 });

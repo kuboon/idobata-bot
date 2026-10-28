@@ -1,6 +1,8 @@
 import { type Handle } from "@remix-run/component";
 
-import { cardStyle } from "../theme.ts";
+import { DocumentList } from "../islands/document_list.tsx";
+import { routes } from "../routes.ts";
+import { buttonStyle } from "../theme.ts";
 
 export const title = "idobata-bot";
 export const description =
@@ -20,10 +22,12 @@ export default function Home(_handle: Handle) {
         できます。
       </p>
 
-      <section mix={cardStyle}>
-        <h2>文書一覧</h2>
-        <p>登録済みの文書はまだありません。</p>
-      </section>
+      <p>
+        <a href={routes.newDocument.href()} mix={buttonStyle}>文書を登録する</a>
+      </p>
+
+      <h2>文書一覧</h2>
+      <DocumentList />
     </>
   );
 }

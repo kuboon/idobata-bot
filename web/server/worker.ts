@@ -16,6 +16,7 @@ import type { D1DatabaseBinding } from "@remix-kbn/data-table-d1";
 
 import { routes } from "../client/routes.ts";
 import { useDatabase } from "./db/mod.ts";
+import { type AssetsBinding, serveDocumentShell } from "./document_shell.ts";
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
@@ -43,9 +44,23 @@ router.map(routes.api.docs, createDocsController() as never);
 /** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
 interface WorkerEnv {
   DB?: D1DatabaseBinding;
+  ASSETS?: AssetsBinding;
 }
 
 let databaseSet = false;
+let assets: AssetsBinding | undefined;
+
+// The document page, which the static build writes once — see `document_shell.ts`.
+router.get(
+  routes.document,
+  (({ request, params }: {
+    request: Request;
+    params: { docId: string };
+  }) =>
+    assets
+      ? serveDocumentShell(request, params.docId, assets)
+      : new Response("Not Found", { status: 404 })) as never,
+);
 
 export default {
   fetch(request: Request, env?: WorkerEnv): Promise<Response> {
@@ -55,6 +70,7 @@ export default {
       useDatabase(env.DB);
       databaseSet = true;
     }
+    assets ??= env?.ASSETS;
     return router.fetch(request);
   },
 };

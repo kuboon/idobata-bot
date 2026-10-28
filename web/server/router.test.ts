@@ -45,3 +45,21 @@ Deno.test("GET /og/index.png draws the home page's card", async () => {
   assertEquals(res.headers.get("content-type"), "image/png");
   await res.body?.cancel();
 });
+
+Deno.test("GET /new renders the registration page", async () => {
+  const res = await router.fetch(new Request("http://x/new"));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  assertStringIncludes(html, "文書を登録");
+  assertStringIncludes(html, "new_document_form");
+});
+
+Deno.test("GET /d/:docId renders the document page for any ID", async () => {
+  for (const id of ["_shell", "abc"]) {
+    const res = await router.fetch(new Request(`http://x/d/${id}`));
+    assertEquals(res.status, 200);
+    const html = await res.text();
+    assertStringIncludes(html, "document_view");
+    assertStringIncludes(html, "<title>文書 — idobata-bot</title>");
+  }
+});

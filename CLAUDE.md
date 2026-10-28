@@ -45,6 +45,16 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 [RFC 7521]: https://www.rfc-editor.org/rfc/rfc7521
 [RFC 7523]: https://www.rfc-editor.org/rfc/rfc7523
 
+## 文書と段落
+
+- 文書は Markdown で登録し、版ごとに段落（セグメント）へ分けて保存する
+  （`web/server/lib/segments.ts`）。分割は `@kuboon/md` と同じ remark-parse +
+  remark-gfm
+  のトップレベルのノードで、段落の本文は原文をそのまま切り出したもの。
+- 表示は `@kuboon/md` で文書全体を一度に描画し、トップレベルの要素を原文中の
+  位置で段落に対応づける（`web/client/lib/document.ts`）。段落ごとに別々に
+  描画しないのは、参照リンクや脚注を解決するため。
+
 ## 認証 (API)
 
 RP 側にセッションは持たない（`docs/design.md`
@@ -123,6 +133,10 @@ Deno で catch 不能なエラーになる)。env は top-level await
   でクロールして `web/dist` に静的 HTML を書き出す。クロールは `entryPoints`
   (`/`、`/my`、og 画像、`/sw.js`) とそこからのリンクだけを辿る。どこからも
   リンクしていない `/api/*` は静的化されない。
+- 文書ページ `/d/:docId` は文書ごとに静的化できないので、ビルドは `/d/_shell` を
+  1 枚だけ書き、Worker が `/d/*` をその殻で返す（`env.ASSETS` から取り、
+  `HTMLRewriter` で `<title>` / OGP を文書のものに書き換える。
+  `web/server/document_shell.ts`）。文書の中身は island が API から取る。
 - `router.tsx` は `Deno.bundle` / `Deno.readTextFile` を使うので Workers では
   動かさない。**API を足したら `worker.ts` にも配線する**（`router.tsx` だけに
   足すと Cloudflare に出ない）。

@@ -90,7 +90,7 @@ Deno.test("an empty document has no segments", () => {
   assertEquals(parseSegments("  \n\n---\n"), []);
 });
 
-Deno.test("definitions and raw HTML are not segments", () => {
+Deno.test("definitions, footnotes and raw HTML are not segments", () => {
   assertEquals(
     kinds(`段落 [リンク][ref]。
 
@@ -99,10 +99,7 @@ Deno.test("definitions and raw HTML are not segments", () => {
 <div>生の HTML</div>
 
 [^1]: 脚注`),
-    [
-      ["paragraph", "段落 [リンク][ref]。"],
-      ["paragraph", "[^1]: 脚注"],
-    ],
+    [["paragraph", "段落 [リンク][ref]。"]],
   );
 });
 

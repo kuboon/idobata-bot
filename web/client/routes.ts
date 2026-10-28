@@ -15,9 +15,21 @@
 
 import { get, patch, post, route } from "@remix-run/fetch-router/routes";
 
+/** The `:docId` the static build writes the document page under — see `routes.document`. */
+export const DOCUMENT_SHELL_ID = "_shell";
+
 export const routes = route("", {
   home: get("/"),
   my: get("/my"),
+  /** Register a document. */
+  newDocument: get("/new"),
+  /**
+   * One document: the viewer, its opinions and the chat. A page, but not one the static build can
+   * write per document — the IDs are only in the database. So the build writes it once, as
+   * `/d/_shell`, the Worker answers every `/d/:docId` with that file (`server/worker.ts`), and the
+   * page's island reads the ID back out of the URL.
+   */
+  document: get("/d/:docId"),
   /** RP public JWKS — lets the IdP verify our `private_key_jwt` assertions. */
   jwks: get("/.well-known/jwks.json"),
   api: route("api", {

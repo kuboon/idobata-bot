@@ -1,4 +1,5 @@
 import { assertEquals } from "@std/assert";
+import { openLocalDatabase } from "./db/local.ts";
 import worker from "./worker.ts";
 
 const get = (path: string) => worker.fetch(new Request(`http://x${path}`));
@@ -8,6 +9,21 @@ Deno.test("worker serves the RP JWKS", async () => {
   assertEquals(res.status, 200);
   const body = await res.json() as { keys: { kty: string }[] };
   assertEquals(body.keys[0].kty, "EC");
+});
+
+Deno.test("worker answers /d/:docId with the static shell", async () => {
+  await openLocalDatabase(":memory:");
+  const requested: string[] = [];
+  const ASSETS = {
+    fetch(request: Request) {
+      requested.push(new URL(request.url).pathname);
+      return Promise.resolve(new Response("<title>文書</title>"));
+    },
+  };
+  const res = await worker.fetch(new Request("http://x/d/abc"), { ASSETS });
+  assertEquals(res.status, 200);
+  assertEquals(await res.text(), "<title>文書</title>");
+  assertEquals(requested, ["/d/_shell"]);
 });
 
 Deno.test("worker does not render pages (static assets answer those)", async () => {

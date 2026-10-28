@@ -33,7 +33,9 @@ const parser = unified().use(remarkParse).use(remarkGfm);
  * What a top-level node becomes, or `null` for one that is not a segment.
  *
  * Thematic breaks and link reference definitions render as nothing anyone could have an opinion
- * about, and raw HTML is dropped by `@kuboon/md`, so none of them are segments.
+ * about, raw HTML is dropped by `@kuboon/md`, and footnote definitions render together in a
+ * footnotes section at the end rather than where they were written — so none of them are
+ * segments.
  */
 function kindOf(node: RootContent): SegmentKind | null {
   switch (node.type) {
@@ -48,7 +50,6 @@ function kindOf(node: RootContent): SegmentKind | null {
     case "blockquote":
       return "quote";
     case "paragraph":
-    case "footnoteDefinition":
       return "paragraph";
     default:
       return null;
