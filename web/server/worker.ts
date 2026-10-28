@@ -16,6 +16,7 @@ import type { D1DatabaseBinding } from "@remix-kbn/data-table-d1";
 
 import { routes } from "../client/routes.ts";
 import { useDatabase } from "./db/mod.ts";
+import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
@@ -37,6 +38,7 @@ router.map(
   }) as never,
 );
 router.map(routes.api.me, createMeController() as never);
+router.map(routes.api.docs, createDocsController() as never);
 
 /** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
 interface WorkerEnv {

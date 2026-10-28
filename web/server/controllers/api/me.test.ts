@@ -1,59 +1,20 @@
 import { assertEquals } from "@std/assert";
 import { createRouter } from "@remix-run/fetch-router";
-import { init, InMemoryKeyRepository } from "@kuboon/dpop";
-import {
-  createLocalJWKSet,
-  exportJWK,
-  generateKeyPair,
-  type JWK,
-  SignJWT,
-} from "jose";
 
 import { routes } from "../../../client/routes.ts";
 import { openLocalDatabase } from "../../db/local.ts";
+import { appUrl, dpopClientFor, fakeIdp } from "../../testing/auth.ts";
 import { createMeController } from "./me.ts";
-
-const ISSUER = "https://idp.test";
-
-/** A stand-in for id.kbn.one: its signing key, and a way to issue its `/session` token. */
-async function fakeIdp() {
-  const { privateKey, publicKey } = await generateKeyPair("ES256");
-  const jwk: JWK = { ...(await exportJWK(publicKey)), kid: "k1", alg: "ES256" };
-  return {
-    jwks: createLocalJWKSet({ keys: [jwk] }),
-    token(
-      sub: string,
-      jkt: string,
-      extra: Record<string, unknown> = {},
-      issuer = ISSUER,
-    ) {
-      return new SignJWT({ cnf: { jkt }, ...extra })
-        .setProtectedHeader({ alg: "ES256", kid: "k1" })
-        .setIssuer(issuer)
-        .setSubject(sub)
-        .setIssuedAt()
-        .setExpirationTime("1h")
-        .sign(privateKey);
-    },
-  };
-}
 
 async function setup() {
   await openLocalDatabase(":memory:");
   const idp = await fakeIdp();
   const router = createRouter();
-  router.map(
-    routes.api.me,
-    createMeController({ jwks: idp.jwks, issuer: ISSUER }) as never,
-  );
-  const client = await init({
-    keyStore: new InMemoryKeyRepository(),
-    fetch: router.fetch.bind(router),
-  });
-  return { idp, router, ...client };
+  router.map(routes.api.me, createMeController(idp.auth) as never);
+  return { idp, router, ...(await dpopClientFor(router)) };
 }
 
-const url = (path: string) => `https://app.test${path}`;
+const url = appUrl;
 
 Deno.test("/api/me without a DPoP proof is 401", async () => {
   const { router } = await setup();

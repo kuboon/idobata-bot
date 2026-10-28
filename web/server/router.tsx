@@ -37,6 +37,7 @@ import { routes } from "../client/routes.ts";
 import * as Home from "../client/pages/index.tsx";
 import * as My from "../client/pages/my.tsx";
 
+import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
@@ -137,6 +138,7 @@ const api = createController(routes.api, {
 router.map(routes, top);
 router.map(routes.api, api);
 router.map(routes.api.me, createMeController());
+router.map(routes.api.docs, createDocsController());
 
 router.get("/static/*path", ({ request }) => staticFiles.fetch(request));
 router.get(`${assetsPath}/*path`, ({ request }) => assets.fetch(request));

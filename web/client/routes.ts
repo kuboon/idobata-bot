@@ -28,5 +28,12 @@ export const routes = route("", {
       show: get("/"),
       update: patch("/"),
     }),
+    docs: route("docs", {
+      index: get("/"),
+      /** Sign-in required. */
+      create: post("/"),
+      /** `?version=n` for a version other than the latest. */
+      show: get("/:docId"),
+    }),
   }),
 });
