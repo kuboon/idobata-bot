@@ -153,7 +153,7 @@ export const PushCard = clientEntry(
 
     // Server-initiated path: ask *our* server to deliver a push to the
     // signed-in user's devices via the IdP's `POST /rp/notifications`.
-    // [feature:server-send] — also the button below and the `POST /api/notify` it calls.
+    // Server-initiated send — also the button below and the `POST /api/notify` it calls.
     const onServerSend = async () => {
       if (sending || !userId) return;
       sending = true;
@@ -374,9 +374,7 @@ export const PushCard = clientEntry(
                 「バッジ数」に数字を入れて送信すると、その値がアプリのバッジ
                 (Badging API) に反映されます。空欄なら通常の通知のみ。
                 「サーバーから送信」は <code>POST /api/notify</code>{" "}
-                を使うため、サーバーが動いている環境 (Cloudflare Workers)
-                でのみ動作します。静的に配信された GitHub Pages
-                では送信できません。
+                を通して、サーバーから IdP 経由で送ります。
               </p>
             </div>
           )}

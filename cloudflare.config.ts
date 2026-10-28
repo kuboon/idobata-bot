@@ -12,7 +12,7 @@ export default defineConfig({
   // Not a secret: it is only an identifier, and the API token is what authorizes.
   accountId: "ac92f36f0a2d84353b137574157f7480",
   worker: {
-    name: "deno-remix-tmpl",
+    name: "idobata-bot",
     compatibilityDate: "2026-10-01",
     entrypoint: "./web/worker-dist/worker.js",
     assets: {
@@ -23,14 +23,10 @@ export default defineConfig({
     },
     env: {
       IDP_ORIGIN: bindings.text("https://id.kbn.one"),
-      RP_ORIGIN: bindings.text("https://deno-remix-tmpl.kuboon.workers.dev"),
-      // Secrets, set once with `deno task cf workers secrets update <NAME> --worker deno-remix-tmpl
+      RP_ORIGIN: bindings.text("https://idobata-bot.kuboon.workers.dev"),
+      // Secrets, set once with `deno task cf workers secrets update <NAME> --worker idobata-bot
       // --type secret_text --text ...`; declared here so a deploy keeps them.
       RP_SIGNING_KEY_JWK: bindings.secret(),
-      TURSO_DATABASE_URL: bindings.text(
-        "libsql://deno-remix-reference-kuboon.aws-ap-northeast-1.turso.io",
-      ),
-      TURSO_AUTH_TOKEN: bindings.secret(),
     },
   },
 });

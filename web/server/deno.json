@@ -21,16 +21,14 @@
       ],
       "env": {
         "allow": [
-          "BASE_URL"
+          "SITE_URL"
         ],
         "ignore": [
           "NODE_ENV",
           "VSCODE_TEXTMATE_DEBUG",
           "IDP_ORIGIN",
           "RP_ORIGIN",
-          "RP_SIGNING_KEY_JWK",
-          "TURSO_DATABASE_URL",
-          "TURSO_AUTH_TOKEN"
+          "RP_SIGNING_KEY_JWK"
         ]
       },
       "import": true
@@ -44,12 +42,10 @@
           "PORT",
           "IDP_ORIGIN",
           "RP_ORIGIN",
-          "RP_SIGNING_KEY_JWK",
-          "TURSO_DATABASE_URL",
-          "TURSO_AUTH_TOKEN"
+          "RP_SIGNING_KEY_JWK"
         ],
         "ignore": [
-          "BASE_URL",
+          "SITE_URL",
           "NODE_ENV",
           "VSCODE_TEXTMATE_DEBUG"
         ]

@@ -576,8 +576,8 @@ DPoP proof は全 API で必須。🔒 はログイン必須、👑 はオーナ
 
 最初にテンプレの init（`TEMPLATE.md`）を server モードで済ませる。`base` の
 仕組み、デモ機能（`hydration-demo` / `blog` / `showcase` / `fullscreen` / `spa`
-/ `turso` / `protected-api`）は消し、`signin` / `push` / `server-send` は残す
-（採用・賛同・リンクの通知に使う）。
+/ `turso` / `protected-api` / `helper`）は消し、`signin` / `push` /
+`server-send` は残す（採用・賛同・リンクの通知に使う）。
 
 1. **MVP**: Markdown の取り込み、ビューア、段落選択チャット（Clef
    の前段フィルタ、

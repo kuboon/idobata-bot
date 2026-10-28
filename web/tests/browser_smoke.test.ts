@@ -49,7 +49,8 @@ async function serveLightpanda(port: number) {
 }
 
 Deno.test({
-  name: "lightpanda: /hydration の Counter がクリックで +1 される",
+  name:
+    "lightpanda: /my の island が hydrate され、サインイン状態の確認が終わる",
   sanitizeResources: false,
   sanitizeOps: false,
   async fn() {
@@ -71,41 +72,24 @@ Deno.test({
         const context = await browser.createBrowserContext();
         const page = await context.newPage();
 
-        await page.goto(`http://127.0.0.1:${appPort}/hydration`);
+        await page.goto(`http://127.0.0.1:${appPort}/my`);
         await page.waitForFunction("globalThis.__rmxReady === true", {
           timeout: 10_000,
         });
 
-        const before = await page.$eval(
-          "output",
+        // The sign-in card leaves its "checking" state once the DPoP init and the IdP probe have
+        // both settled — which only happens if the island hydrated and ran its setup.
+        await page.waitForFunction(
+          () =>
+            !document.body.textContent?.includes("セッションを確認しています"),
+          { timeout: 10_000 },
+        );
+
+        const heading = await page.$eval(
+          "h1",
           (el) => el.textContent?.trim() ?? "",
         );
-
-        await page.$eval(
-          'button[aria-label="increment"]',
-          (el) => (el as HTMLButtonElement).click(),
-        );
-
-        await page.waitForFunction(
-          (prev: string) =>
-            document.querySelector("output")?.textContent?.trim() !== prev,
-          { timeout: 5_000 },
-          before,
-        );
-
-        const after = await page.$eval(
-          "output",
-          (el) => el.textContent?.trim() ?? "",
-        );
-
-        assertEquals(Number(after), Number(before) + 1);
-
-        // The shared-total island is a separate entrypoint: it only moves if both resolved the
-        // click store to the same module instance.
-        await page.waitForFunction(
-          () => document.querySelector("output strong")?.textContent === "1",
-          { timeout: 5_000 },
-        );
+        assertEquals(heading, "マイページ");
 
         await page.close();
         await context.close();

@@ -59,11 +59,11 @@ export const cardStyle = css({
 });
 
 /**
- * Typography for a tree of elements this site never writes: the Markdown articles.
+ * Typography for a tree of elements this site never writes: the rendered Markdown documents.
  *
  * A stylesheet would reach these with bare element selectors, and would then be styling every
- * `<table>` on the site. Nesting under the one class on the article wrapper says the same thing
- * locally, and it stops at the article.
+ * `<table>` on the site. Nesting under the one class on the document wrapper says the same thing
+ * locally, and it stops at the document.
  */
 export const proseStyle = css({
   "& h2, & h3, & h4": { lineHeight: 1.25, marginBlock: "2rem 0.5rem" },
