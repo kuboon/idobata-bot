@@ -7,7 +7,9 @@
  * site by `deno task build`; this script only arranges those two outputs the way `cf` reads them,
  * with the settings from `cloudflare.config.ts`.
  *
- * Run it through `deno task build:cf`, which builds both inputs first.
+ * Run it through `deno task build:cf`, which builds both inputs first. With `--preview` it writes
+ * the output for `cf previews deploy --prebuilt` instead, which `cf` only accepts from a build
+ * marked as a preview — and `cloudflare.config.ts` sees `ctx.isPreview` (its own D1).
  */
 
 import {
@@ -24,8 +26,9 @@ import {
 
 const root = decodeURIComponent(new URL("../../", import.meta.url).pathname);
 const worker = `${root}web/worker-dist/worker.js`;
-const mode = Deno.args[0];
-const ctx = { isPreview: false, mode };
+const isPreview = Deno.args.includes("--preview");
+const mode = Deno.args.find((arg) => !arg.startsWith("--"));
+const ctx = { isPreview, mode };
 
 const configPath = `${root}cloudflare.config.ts`;
 const { result } = await loadAndParseConfig(configPath, ctx);
@@ -53,4 +56,4 @@ await writeWorkerConfig({
     modules: { "worker.js": { type: "esm" } },
   },
 });
-console.log("Wrote .cloudflare/output/v0");
+console.log(`Wrote .cloudflare/output/v0${isPreview ? " (preview)" : ""}`);
