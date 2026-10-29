@@ -72,6 +72,25 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - 編集・削除は「その時点で賛同も被リンクも無く、採用されていない」ときだけ。
   判定は書き込みの `WHERE` にも入れて、競合しても破られないようにする。
 
+## チャット（Claude API）
+
+設計書 §6。`POST /api/docs/:docId/chat` が 1 ターンを SSE で返す
+（`controllers/api/chat.ts`、`lib/chat/`）。ログイン不要。
+
+- 履歴はブラウザの `sessionStorage`
+  だけ（`web/client/opinions/chat.ts`）。毎ターン 全部送り、`done` イベントの
+  `messages` を足す。サーバーは何も保存しない。
+- `messages[0]`（文書と最初の選択）はサーバーが毎回同じバイト列で作る
+  （`lib/chat/prompt.ts`）。ここに変わるもの（意見の一覧など）を入れない。
+- 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`）。binding が無い
+  （ローカル・テスト）と素通し。弾いた件数だけ `filter_stats` に数える。
+- ツール（`lib/chat/tools.ts`）はサーバーで回す。段落はモデルにはブロック番号で
+  見せる。`draft_opinion` は `draft` イベントでブラウザへ渡し、フォームに入る。
+  投稿はユーザーがする。
+- Claude API を呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
+  差し替える（`controllers/api/chat.test.ts`）。
+- 型と SSE の読み方は `packages/idobata-bot/chat.ts`。
+
 ## 認証 (API)
 
 RP 側にセッションは持たない（`docs/design.md`
@@ -129,6 +148,8 @@ Deno で catch 不能なエラーになる)。env は top-level await
 - `RP_SIGNING_KEY_JWK` — 任意。ES256 秘密鍵 (JWK JSON)。未設定ならプロセス毎に
   生成
   (開発用)。本番では固定鍵を設定し、再起動で鍵がローテートしないようにする。
+- `ANTHROPIC_API_KEY` — チャットの Claude API キー（Worker secret）。未設定なら
+  チャットは `503`。
 - `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
   （`deno task dev` は `data/app.db`）。未設定ならメモリ。
 - `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`

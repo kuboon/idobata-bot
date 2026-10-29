@@ -32,6 +32,7 @@
           "IDP_ORIGIN",
           "RP_ORIGIN",
           "RP_SIGNING_KEY_JWK",
+          "ANTHROPIC_API_KEY",
           "LOCAL_DB"
         ]
       },
@@ -47,6 +48,7 @@
           "IDP_ORIGIN",
           "RP_ORIGIN",
           "RP_SIGNING_KEY_JWK",
+          "ANTHROPIC_*",
           "LOCAL_DB"
         ],
         "ignore": [
@@ -59,7 +61,8 @@
         "0.0.0.0",
         "127.0.0.1",
         "localhost",
-        "id.kbn.one"
+        "id.kbn.one",
+        "api.anthropic.com"
       ],
       "import": true,
       "write": [

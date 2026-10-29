@@ -16,7 +16,9 @@ import type { D1DatabaseBinding } from "@remix-kbn/data-table-d1";
 
 import { routes } from "../client/routes.ts";
 import { useDatabase } from "./db/mod.ts";
+import { type AiBinding, useAi } from "./lib/chat/filter.ts";
 import { type AssetsBinding, serveDocumentShell } from "./document_shell.ts";
+import { createChatController } from "./controllers/api/chat.ts";
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
 import { createOpinionsController } from "./controllers/api/opinions.ts";
@@ -42,11 +44,13 @@ router.map(
 router.map(routes.api.me, createMeController() as never);
 router.map(routes.api.docs, createDocsController() as never);
 router.map(routes.api.opinions, createOpinionsController() as never);
+router.map(routes.api.chat, createChatController() as never);
 
 /** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
 interface WorkerEnv {
   DB?: D1DatabaseBinding;
   ASSETS?: AssetsBinding;
+  AI?: AiBinding;
 }
 
 let databaseSet = false;
@@ -70,6 +74,7 @@ export default {
     // tests call this without an env, and set their own database.
     if (!databaseSet && env?.DB) {
       useDatabase(env.DB);
+      useAi(env.AI);
       databaseSet = true;
     }
     assets ??= env?.ASSETS;

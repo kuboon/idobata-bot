@@ -322,8 +322,10 @@ stance = concern（懸念） | proposal（提案） | support（支持） | ques
 
 ### 流れ
 
-1. ユーザーが文書ページで段落（セグメント）を選び、チャットを開く。未ログインなら
-   ここで Turnstile を通し、`POST /api/docs/:docId/chat-ticket` で**チャット
+1. ユーザーが文書ページで段落（セグメント）を選び、チャットを開く。（Turnstile
+   とチャットチケットは未実装。Rate Limiting
+   と合わせて後の層で足す。）未ログインなら ここで Turnstile
+   を通し、`POST /api/docs/:docId/chat-ticket` で**チャット
    チケット**（thumbprint と文書に束縛した、HMAC 署名つきの短命トークン。例 1
    時間）を受け取る。以降の発言はチケットで通し、Turnstile を毎回は出さない。
 2. 発言ごとに `POST /api/docs/:docId/chat`（SSE）を呼ぶ。ボディは
@@ -405,9 +407,12 @@ system                    固定の指示文
 messages[0] (user)        サーバーが組み立てる（ブラウザの履歴には入れない）
   ├ document              版のセグメント列（custom content, citations 有効）
   │                        ← cache_control (ttl 1h)  … 版ごとに全ユーザーで共有
-  └ 選択中セグメントの既存意見一覧
+  └ text                  会話を始めたときの選択（ブロック番号）
 messages[1..]             ブラウザから来た履歴＋今回の発言    ← 自動キャッシュ
 ```
+
+`messages[1]` もブラウザの発言（user）なので user が 2 つ続くが、API はこれを 1
+ターンにまとめて扱う。
 
 - **文書は custom content の document block**（セグメント 1 つ = content block 1
   つ）で渡し、`citations: { enabled: true }` にする。引用は
@@ -415,9 +420,11 @@ messages[1..]             ブラウザから来た履歴＋今回の発言    �
   ビューアのハイライトに使える。
 - `messages[0]` はサーバーが毎回同じバイト列で組み立てる。ブラウザは 2 番目以降
   だけを持つので、文書を送り返してもらう必要も、改ざんされる心配もない。
-- 選択中セグメントの意見一覧は、**最初のターンでの選択を履歴の先頭に固定**する
-  （ブラウザは最初の `segmentKeys` を履歴と一緒に持ち、毎回同じ値を送る）。
-  途中で増えた意見は `search_opinions` で取りに行かせる（prefix を壊さない）。
+- 選択は、**最初のターンでの選択を履歴の先頭に固定**する（ブラウザは最初の
+  `segmentKeys` と版を履歴と一緒に持ち、毎回同じ値を送る）。
+- **意見の一覧は `messages[0]` に入れない**（2026-10-29 変更）。意見は会話中にも
+  増え、thinking を保つには前のターンを 1 バイトも変えられない。モデルが
+  `search_opinions` で必要なときに取りに行く（prefix を壊さない）。
   選択を変えたら新しい会話にする。
 - 文書ブロックは誰の会話でも同じなので、同じ版を読む全ユーザーでキャッシュが
   当たる。1h TTL を使う。
@@ -426,11 +433,15 @@ messages[1..]             ブラウザから来た履歴＋今回の発言    �
 
 | ツール            | 実装                                                                                        |
 | ----------------- | ------------------------------------------------------------------------------------------- |
-| `search_opinions` | `{ query, segmentKeys? }`。Vectorize で類似検索し、D1 で本文・賛同数を付けて上位 N 件を返す |
-| `get_opinion`     | `{ id }`。本文・リンクしている意見とされている意見・賛同数を返す                            |
+| `search_opinions` | `{ query, segment_indices }`。当面は語の一致で上位 N 件（Vectorize の類似検索は §8 の層で） |
+| `get_opinion`     | `{ opinion_id }`。本文・応答している意見・賛同数を返す                                      |
 | `draft_opinion`   | 下書きを出す（入力は下記）。サーバーは何も保存せず「ユーザーに提示した」と返す              |
 
-`draft_opinion` の入力は 2 通り:
+段落はモデルにはブロック番号（document block の index、0 始まり）で見せ、
+サーバーがセグメントキーに直す。ツールは未ログインの読者の権限で意見を読む。
+
+`draft_opinion` の入力は 2 通り（strict のため全項目必須で、使わない項目は
+空文字・空配列・`-1`）:
 
 - 意見の下書き:
   `{ type: "opinion", title, targets, claim, reason, suggestion? }`。 `targets`
@@ -462,8 +473,9 @@ system prompt で使いどころを指示する。
   と `fallbacks: "default"` を付ける（Claude API でのみ有効）。最終的に
   `stop_reason: "refusal"` なら UI で定型文を出す。
 - 公式 SDK `@anthropic-ai/sdk`（npm）を Worker
-  から使い、`client.messages.stream()` で中継する。API キーは Worker secret
-  `ANTHROPIC_API_KEY`。
+  から使い、`client.beta.messages.stream()` で中継する（fallbacks が beta の
+  ため）。API キーは Worker secret `ANTHROPIC_API_KEY`。未設定ならチャットは
+  `503`。
 - 意見の埋め込みは Workers AI（Claude API に埋め込みは無い）。
 
 ### コストの目安

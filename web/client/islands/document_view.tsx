@@ -24,6 +24,7 @@ import {
 } from "@kuboon/md/hast_to_element.ts";
 
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
+import { ChatStore } from "../opinions/chat.ts";
 import { OpinionPanel } from "../opinions/panel.tsx";
 import { OpinionStore } from "../opinions/store.ts";
 import { deadlineLabel, formatDateTime } from "../lib/format.ts";
@@ -75,6 +76,7 @@ export const DocumentView = clientEntry(
     let blocks: Block[] = [];
     let error = "";
     let store: OpinionStore | null = null;
+    let chat: ChatStore | null = null;
     let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
 
@@ -103,6 +105,9 @@ export const DocumentView = clientEntry(
           );
           document.title = `${detail.title} — idobata-bot`;
           store = new OpinionStore(detail.id);
+          if (detail.open) {
+            chat = new ChatStore(detail.id, detail.version.number);
+          }
           store.addEventListener("change", () => handle.update(), {
             signal: handle.signal,
           });
@@ -139,6 +144,7 @@ export const DocumentView = clientEntry(
             }))}
             segmentLabels={segmentLabels}
             open={detail.open}
+            chat={chat}
           />
         )
         : null;

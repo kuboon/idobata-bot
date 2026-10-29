@@ -29,6 +29,10 @@ export default defineConfig({
       // Secrets, set once with `deno task cf workers secrets update <NAME> --worker idobata-bot
       // --type secret_text --text ...`; declared here so a deploy keeps them.
       RP_SIGNING_KEY_JWK: bindings.secret(),
+      // The Claude API key for the chat (`web/server/lib/chat/`).
+      ANTHROPIC_API_KEY: bindings.secret(),
+      // Workers AI, for the chat's pre-filter (Clef).
+      AI: bindings.ai(),
       // Migrated ahead of a deploy with `deno task db migrate --remote` (needs
       // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission).
       DB: bindings.d1({ name: "idobata-bot" }),

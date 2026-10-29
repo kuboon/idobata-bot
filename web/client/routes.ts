@@ -68,5 +68,12 @@ export const routes = route("", {
       unsupport: del("/opinions/:opinionId/support"),
       mine: get("/me/opinions"),
     }),
+    /**
+     * The AI chat about a document (docs/design.md §6): the history in, the turn out as
+     * server-sent events. No sign-in needed.
+     */
+    chat: route({
+      send: post("/docs/:docId/chat"),
+    }),
   }),
 });

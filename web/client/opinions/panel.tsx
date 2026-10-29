@@ -5,14 +5,17 @@
  * - Segments selected: the opinions about any of them, and a form whose targets are those segments
  *   (one stance each), plus any opinions the reader chose to answer.
  *
- * Plain markup and a store; no AI yet — the chat that drafts opinions comes in a later layer and
- * fills the same form. Every field is uncontrolled (`defaultValue` + `ref`).
+ * Between the two, the chat with the AI (`chat_panel.tsx`). A draft it puts forward fills the
+ * form — fields and targets — for the reader to edit and post. Every field is uncontrolled
+ * (`defaultValue` + `ref`), so a draft is written into the elements.
  */
 
 import { css, type Handle, on, ref } from "@remix-run/component";
 import {
+  type ChatDraft,
   type Opinion,
   OpinionApiError,
+  type OpinionInput,
   type Stance,
   STANCE_LABELS,
   STANCES,
@@ -30,6 +33,8 @@ import {
   primaryStyle,
 } from "../theme.ts";
 import { color, radius } from "../tokens.ts";
+import type { ChatStore } from "./chat.ts";
+import { ChatPanel } from "./chat_panel.tsx";
 import type { OpinionStore } from "./store.ts";
 
 export interface OpinionPanelProps {
@@ -40,6 +45,8 @@ export interface OpinionPanelProps {
   segmentLabels: Map<string, string>;
   /** Whether the document still takes opinions. */
   open: boolean;
+  /** The chat, or `null` when the document is closed. */
+  chat: ChatStore | null;
 }
 
 /** A short, one-line label for a stance on a target. */
@@ -70,14 +77,62 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
   const stances = new Map<string, HTMLSelectElement>();
   let busy = false;
   let message: { kind: "error" | "success"; text: string } | null = null;
+  /** A draft's targets, which stand in for the selection's until it is posted or dropped. */
+  let draftTargets: Target[] | null = null;
+  /** Bumped per draft, so its stance selects are new elements with the draft's stances. */
+  let draftGeneration = 0;
+  /** A draft waiting for the form — which is only there once signed in. */
+  let pending: OpinionInput | null = null;
+
+  /** Writes the pending draft into the form, if the form is there. */
+  const fill = () => {
+    if (!pending || !fields.title) return;
+    fields.title.value = pending.title;
+    fields.claim.value = pending.claim;
+    fields.reason.value = pending.reason;
+    fields.suggestion.value = pending.suggestion ?? "";
+    pending = null;
+    fields.title.closest("form")?.scrollIntoView({ block: "nearest" });
+  };
+
+  const applyDraft = (draft: ChatDraft) => {
+    if (draft.type === "support") {
+      if (sessionStore.userId === null) {
+        message = {
+          kind: "error",
+          text: "賛同するにはサインインしてください。",
+        };
+        handle.update();
+        return;
+      }
+      void handle.props.store.setSupport(draft.opinionId, true).then(() => {
+        message = { kind: "success", text: "賛同しました。" };
+        handle.update();
+      }, fail);
+      return;
+    }
+    pending = draft.input;
+    draftTargets = draft.input.targets;
+    draftGeneration++;
+    message = sessionStore.userId === null
+      ? {
+        kind: "error",
+        text:
+          "下書きを投稿するにはサインインしてください。サインインするとフォームに入ります。",
+      }
+      : null;
+    handle.update();
+    setTimeout(fill);
+  };
 
   if (typeof document !== "undefined") {
     handle.props.store.addEventListener("change", () => handle.update(), {
       signal: handle.signal,
     });
-    sessionStore.addEventListener("change", () => handle.update(), {
-      signal: handle.signal,
-    });
+    sessionStore.addEventListener("change", () => {
+      handle.update();
+      setTimeout(fill);
+    }, { signal: handle.signal });
   }
 
   const fail = (e: unknown) => {
@@ -93,18 +148,23 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
     const { store, selected } = handle.props;
     const stanceOf = (key: string): Stance =>
       (stances.get(key)?.value as Stance | undefined) ?? "concern";
-    const targets: Target[] = [
-      ...selected.map((s) => ({
-        kind: "segment" as const,
-        segmentKey: s.key,
-        stance: stanceOf(`s:${s.key}`),
-      })),
-      ...[...answering].map((id) => ({
-        kind: "opinion" as const,
-        opinionId: id,
-        stance: stanceOf(`o:${id}`),
-      })),
-    ];
+    const targets: Target[] = draftTargets
+      ? draftTargets.map((t, i) => ({
+        ...t,
+        stance: stanceOf(`t:${draftGeneration}:${i}`),
+      }))
+      : [
+        ...selected.map((s) => ({
+          kind: "segment" as const,
+          segmentKey: s.key,
+          stance: stanceOf(`s:${s.key}`),
+        })),
+        ...[...answering].map((id) => ({
+          kind: "opinion" as const,
+          opinionId: id,
+          stance: stanceOf(`o:${id}`),
+        })),
+      ];
     if (targets.length === 0) {
       targets.push({ kind: "document", stance: stanceOf("d") });
     }
@@ -121,6 +181,7 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
       });
       for (const field of Object.values(fields)) field.value = "";
       answering.clear();
+      draftTargets = null;
       message = { kind: "success", text: "意見を投稿しました。" };
     } catch (e) {
       fail(e);
@@ -226,7 +287,7 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
   };
 
   return () => {
-    const { store, selected, open } = handle.props;
+    const { store, selected, open, chat, segmentLabels } = handle.props;
     if (!store.loaded) return <p mix={metaStyle}>意見を読み込んでいます…</p>;
 
     const keys = new Set(selected.map((s) => s.key));
@@ -264,6 +325,18 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
           )
           : null}
 
+        {open && chat
+          ? (
+            <ChatPanel
+              chat={chat}
+              store={store}
+              selectedKeys={selected.map((s) => s.key)}
+              segmentLabels={segmentLabels}
+              onDraft={applyDraft}
+            />
+          )
+          : null}
+
         <h3>意見を書く</h3>
         {!open ? <p>募集は終了しました。</p> : sessionStore.userId === null
           ? (
@@ -276,31 +349,69 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
             <form mix={[formStyle, on<HTMLFormElement>("submit", onSubmit)]}>
               <fieldset mix={targetsFieldStyle}>
                 <legend>何に対する意見か</legend>
-                {selected.map((s) => (
-                  <label key={`s:${s.key}`} mix={targetRowStyle}>
-                    <span>「{s.label}」への</span>
-                    {stanceSelect(`s:${s.key}`, "concern")}
-                  </label>
-                ))}
-                {answered.map((o) => (
-                  <label key={`o:${o.id}`} mix={targetRowStyle}>
-                    <span>意見「{o.title}」への</span>
-                    {stanceSelect(`o:${o.id}`, "support")}
+                {draftTargets
+                  ? draftTargets.map((t, i) => (
+                    <label
+                      key={`t:${draftGeneration}:${i}`}
+                      mix={targetRowStyle}
+                    >
+                      <span>
+                        {targetLabel(
+                          { ...t, stance: "concern" },
+                          segmentLabels,
+                          store,
+                        ).replace(/への.*$/, "への")}
+                      </span>
+                      {stanceSelect(`t:${draftGeneration}:${i}`, t.stance)}
+                    </label>
+                  ))
+                  : null}
+                {draftTargets
+                  ? (
                     <button
                       type="button"
                       mix={[
                         actionStyle,
                         on("click", () => {
-                          answering.delete(o.id);
+                          draftTargets = null;
                           handle.update();
                         }),
                       ]}
                     >
-                      外す
+                      下書きの対象をやめて、選んだ段落にする
                     </button>
-                  </label>
-                ))}
-                {selected.length === 0 && answered.length === 0
+                  )
+                  : null}
+                {draftTargets
+                  ? null
+                  : selected.map((s) => (
+                    <label key={`s:${s.key}`} mix={targetRowStyle}>
+                      <span>「{s.label}」への</span>
+                      {stanceSelect(`s:${s.key}`, "concern")}
+                    </label>
+                  ))}
+                {draftTargets
+                  ? null
+                  : answered.map((o) => (
+                    <label key={`o:${o.id}`} mix={targetRowStyle}>
+                      <span>意見「{o.title}」への</span>
+                      {stanceSelect(`o:${o.id}`, "support")}
+                      <button
+                        type="button"
+                        mix={[
+                          actionStyle,
+                          on("click", () => {
+                            answering.delete(o.id);
+                            handle.update();
+                          }),
+                        ]}
+                      >
+                        外す
+                      </button>
+                    </label>
+                  ))}
+                {!draftTargets && selected.length === 0 &&
+                    answered.length === 0
                   ? (
                     <label mix={targetRowStyle}>
                       <span>文書全体への</span>
