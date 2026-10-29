@@ -213,9 +213,7 @@ Deno.test("search runs on the server; a draft opens in the browser and its answe
           type: "opinion",
           support_opinion_id: "",
           title: "予算の根拠",
-          claim: "根拠を示すべき",
-          reason: "妥当か判断できない",
-          suggestion: "",
+          body: "根拠を示すべき。妥当か判断できない。",
           targets: [{
             kind: "segment",
             segment_index: 1,
@@ -238,9 +236,7 @@ Deno.test("search runs on the server; a draft opens in the browser and its answe
     type: "opinion",
     input: {
       title: "予算の根拠",
-      claim: "根拠を示すべき",
-      reason: "妥当か判断できない",
-      suggestion: "",
+      body: "根拠を示すべき。妥当か判断できない。",
       targets: [{ kind: "segment", segmentKey: keys[1], stance: "question" }],
     },
   }]);
@@ -328,9 +324,7 @@ Deno.test("a draft that does not check out goes back to the model, not the brows
           type: "opinion",
           support_opinion_id: "",
           title: "x",
-          claim: "y",
-          reason: "z",
-          suggestion: "",
+          body: "y",
           targets: [{
             kind: "segment",
             segment_index: 99,

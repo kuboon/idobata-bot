@@ -44,7 +44,7 @@ export const SYSTEM_PROMPT =
 立場（stance）は読者の言葉から判断してください。判断に迷うときは読者に確かめてください。
 
 ## 下書き
-- 新規性のある意見（「新規」か「応答」）で、要旨・主張・理由がそろったら、draft_opinion で下書きを出してください。読者の画面に下書き入りの投稿ダイアログが開きます。
+- 意見は「表明（何に対する、どういう立場か）」「タイトル」「本文（空でもよい）」の 3 つです。新規性のある意見（「新規」か「応答」）で、表明とタイトルが決まったら、draft_opinion で下書きを出してください。読者の画面に下書き入りの投稿ダイアログが開きます。
 - 投稿は読者が自分で行います。あなたが投稿することはありません。draft_opinion の結果に、読者が投稿したか閉じたかが返ります。
 
 ## 守ること
@@ -64,7 +64,7 @@ export const TOOLS: BetaToolUnion[] = [
       properties: {
         query: {
           type: "string",
-          description: "探す内容。意見の要旨や主張に含まれそうな言葉",
+          description: "探す内容。意見のタイトルや本文に含まれそうな言葉",
         },
         segment_indices: {
           type: "array",
@@ -139,16 +139,12 @@ export const TOOLS: BetaToolUnion[] = [
         },
         title: {
           type: "string",
-          description: "一行の要旨。support なら空文字",
+          description: "一行のタイトル（意見の要旨）。support なら空文字",
         },
-        claim: { type: "string", description: "主張。support なら空文字" },
-        reason: {
+        body: {
           type: "string",
-          description: "理由・根拠。support なら空文字",
-        },
-        suggestion: {
-          type: "string",
-          description: "具体的な修正案。無ければ空文字",
+          description:
+            "本文。読者が話した問題点・理由・修正案などを、読者の言葉を活かして簡潔に。タイトルと表明で言い尽くせていれば空文字でよい。support なら空文字",
         },
         targets: {
           type: "array",
@@ -190,9 +186,7 @@ export const TOOLS: BetaToolUnion[] = [
         "type",
         "support_opinion_id",
         "title",
-        "claim",
-        "reason",
-        "suggestion",
+        "body",
         "targets",
       ],
     },

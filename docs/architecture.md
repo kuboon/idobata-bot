@@ -300,9 +300,8 @@ messages[1..]             ブラウザから来た履歴＋今回の発言    �
 - サーバーのツールは未ログインの読者の権限で意見を読む。
 - `draft_opinion` の入力は 2 通り（strict のため全項目必須で、使わない項目は
   空文字・空配列・`-1`）:
-  - 意見の下書き:
-    `{ type: "opinion", title, targets, claim, reason, suggestion }`。 `targets`
-    は §4 の表明の配列。
+  - 意見の下書き: `{ type: "opinion", title, targets, body }`（body
+    は空でもよい）。 `targets` は §4 の表明の配列。
   - 賛同の提案: `{ type: "support", support_opinion_id }`。
 - すべて `strict: true`。`tool_choice` は `auto` にし、system prompt で
   使いどころを指示する。
@@ -385,7 +384,7 @@ changes(id TEXT PK, from_version_id, to_version_id, ord,
         kind /* added|removed|modified */, from_segment_key, to_segment_key, diff_json)
 
 opinions(id TEXT PK, document_id, version_id /* 投稿時の版 */, author_id → users,
-         title, claim, reason, suggestion,
+         title, body /* 空でもよい */,
          status /* published|adopted|hidden */, created_at, updated_at)
 opinion_targets(id TEXT PK, opinion_id → opinions ON DELETE CASCADE,
                 kind /* segment|document|opinion */,

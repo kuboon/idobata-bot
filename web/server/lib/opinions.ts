@@ -56,26 +56,19 @@ export class OpinionError extends Error {
  *
  * @throws {OpinionError} 400 with the reason
  */
-export function parseOpinionInput(body: unknown): OpinionInput {
-  const input = (body ?? {}) as Record<string, unknown>;
+export function parseOpinionInput(json: unknown): OpinionInput {
+  const input = (json ?? {}) as Record<string, unknown>;
   const text = (key: string) =>
     typeof input[key] === "string" ? (input[key] as string).trim() : "";
   const title = text("title");
-  const claim = text("claim");
-  const reason = text("reason");
-  const suggestion = text("suggestion");
+  const body = text("body");
   const bad = (message: string) => new OpinionError(400, message);
 
   if (!title || title.length > TITLE_MAX_LENGTH) {
     throw bad(`title must be 1–${TITLE_MAX_LENGTH} characters`);
   }
-  for (const [name, value] of [["claim", claim], ["reason", reason]]) {
-    if (!value || value.length > BODY_MAX_LENGTH) {
-      throw bad(`${name} must be 1–${BODY_MAX_LENGTH} characters`);
-    }
-  }
-  if (suggestion.length > BODY_MAX_LENGTH) {
-    throw bad(`suggestion must be at most ${BODY_MAX_LENGTH} characters`);
+  if (body.length > BODY_MAX_LENGTH) {
+    throw bad(`body must be at most ${BODY_MAX_LENGTH} characters`);
   }
 
   const raw = Array.isArray(input.targets) ? input.targets : [];
@@ -107,7 +100,7 @@ export function parseOpinionInput(body: unknown): OpinionInput {
     return target;
   });
 
-  return { title, claim, reason, suggestion, targets };
+  return { title, body, targets };
 }
 
 function targetKey(target: Target): string {
@@ -196,9 +189,7 @@ type OpinionRow = {
   author_id: string;
   author_nickname: string;
   title: string;
-  claim: string;
-  reason: string;
-  suggestion: string;
+  body: string;
   status: "published" | "adopted" | "hidden";
   support_count: number;
   incoming_count: number;
@@ -211,7 +202,7 @@ const SELECT_OPINIONS = (viewerId: string | null) =>
   sql`
   SELECT o.id, o.document_id, v.number AS version_number,
          o.author_id, u.nickname AS author_nickname,
-         o.title, o.claim, o.reason, o.suggestion, o.status,
+         o.title, o.body, o.status,
          o.created_at, o.updated_at,
          (SELECT COUNT(*) FROM supports s WHERE s.opinion_id = o.id) AS support_count,
          (SELECT COUNT(*) FROM opinion_targets t JOIN opinions o2 ON o2.id = t.opinion_id
@@ -262,9 +253,7 @@ async function toOpinions(
       version: Number(r.version_number),
       author: { id: r.author_id, nickname: r.author_nickname },
       title: r.title,
-      claim: r.claim,
-      reason: r.reason,
-      suggestion: r.suggestion,
+      body: r.body,
       targets: byOpinion.get(r.id) ?? [],
       status: r.status,
       supportCount,
@@ -353,9 +342,7 @@ export async function createOpinion(
       version_id: document.version_id,
       author_id: authorId,
       title: input.title,
-      claim: input.claim,
-      reason: input.reason,
-      suggestion: input.suggestion ?? "",
+      body: input.body ?? "",
       status: "published",
       created_at: at,
       updated_at: at,
@@ -406,8 +393,9 @@ export async function updateOpinion(
   const db = getDb();
   const updated = await db.exec(sql`
     UPDATE opinions
-       SET title = ${input.title}, claim = ${input.claim}, reason = ${input.reason},
-           suggestion = ${input.suggestion ?? ""}, updated_at = ${now()}
+       SET title = ${input.title}, body = ${
+    input.body ?? ""
+  }, updated_at = ${now()}
      WHERE id = ${opinionId} AND author_id = ${userId} AND ${STILL_UNFROZEN}
   `);
   if (!updated.affectedRows) {

@@ -63,8 +63,7 @@ const input = (
   over: Partial<OpinionInput> & Pick<OpinionInput, "targets">,
 ): OpinionInput => ({
   title: "要旨",
-  claim: "主張",
-  reason: "理由",
+  body: "本文",
   ...over,
 });
 
@@ -232,6 +231,32 @@ Deno.test("targets must exist in this document and be well-formed", async () => 
     );
     assertEquals(error.status, 400, JSON.stringify(targets));
   }
+});
+
+Deno.test("an opinion is targets, a title and a body that may be empty", async () => {
+  const { browser, docId, seg1 } = await setup();
+  const alice = await browser("alice");
+  const targets = [{
+    kind: "segment" as const,
+    segmentKey: seg1,
+    stance: "concern" as const,
+  }];
+
+  const bare = await alice.client.post(docId, { title: "要旨だけ", targets });
+  assertEquals([bare.title, bare.body], ["要旨だけ", ""]);
+  const full = await alice.client.post(
+    docId,
+    input({ body: "一行目\n二行目", targets }),
+  );
+  assertEquals(full.body, "一行目\n二行目");
+
+  const status = async (over: Partial<OpinionInput>) =>
+    (await assertRejects(
+      () => alice.client.post(docId, input({ targets, ...over })),
+      OpinionApiError,
+    )).status;
+  assertEquals(await status({ title: " " }), 400);
+  assertEquals(await status({ body: "あ".repeat(4001) }), 400);
 });
 
 Deno.test("after the deadline nothing is posted or supported, but all is readable", async () => {

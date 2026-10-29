@@ -216,7 +216,7 @@ export const DocumentAdmin = clientEntry(
           <span mix={metaStyle}>
             {opinion.targets.map(targetLabel).join("、")}
           </span>
-          <p>{opinion.claim}</p>
+          {opinion.body ? <p mix={preWrapStyle}>{opinion.body}</p> : null}
           <span mix={metaStyle}>
             {opinion.author.nickname} ・ {formatDateTime(opinion.createdAt)}
             {" "}
@@ -402,6 +402,8 @@ const inputStyle = css({
   background: color.bg,
   color: color.fg,
 });
+
+const preWrapStyle = css({ whiteSpace: "pre-wrap" });
 
 const listStyle = css({ listStyle: "none", padding: 0, margin: 0 });
 
