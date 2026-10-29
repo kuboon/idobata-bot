@@ -19,6 +19,13 @@ jobs:
       - run: deno task build
       - run: deno task build:cf
       - run: deno task cf deploy --prebuilt --dry-run
-      # @lightpanda/browser >= 1.6 no longer fetches its binary on install.
-      - run: deno run -A npm:@lightpanda/browser install
+      # The browser smoke test's binary, taken from the GitHub release rather than with
+      # `npm:@lightpanda/browser install`: that command checks the download against
+      # get.lightpanda.io/versions.json, whose checksum fell out of step with the nightly it
+      # points at. `@lightpanda/browser` runs whatever LIGHTPANDA_EXECUTABLE_PATH names.
+      - run: |
+          curl -fsSL -o "$RUNNER_TEMP/lightpanda" \
+            https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux
+          chmod +x "$RUNNER_TEMP/lightpanda"
+          echo "LIGHTPANDA_EXECUTABLE_PATH=$RUNNER_TEMP/lightpanda" >> "$GITHUB_ENV"
       - run: deno task test:browser
