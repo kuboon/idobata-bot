@@ -10,19 +10,27 @@
  *   naming it, not adopted. Worked out at the moment of the request, so a withdrawn support makes
  *   it editable again.
  * - Nothing is posted, supported or changed after the document's deadline.
+ * - The document's owner can hide an opinion and show it again, always with a reason, which is
+ *   kept and public (docs/design.md §5).
  */
 
 import type {
+  FilterStat,
+  ModerationAction,
+  ModerationInput,
+  ModerationLog,
   Opinion,
   OpinionDetail,
   OpinionInput,
   OpinionList,
+  OwnerView,
   Target,
 } from "@kuboon/idobata-bot";
 import { inList, sql } from "@remix-run/data-table";
 
 import { chunksForD1, getDb } from "../db/mod.ts";
 import {
+  moderationLogs,
   newId,
   now,
   opinions,
@@ -30,7 +38,7 @@ import {
   STANCES,
   supports,
 } from "../db/schema.ts";
-import { isOpen } from "./documents.ts";
+import { documentOwner, isOpen } from "./documents.ts";
 
 export const TITLE_MAX_LENGTH = 120;
 export const BODY_MAX_LENGTH = 4000;
@@ -191,7 +199,7 @@ type OpinionRow = {
   claim: string;
   reason: string;
   suggestion: string;
-  status: "published" | "adopted";
+  status: "published" | "adopted" | "hidden";
   support_count: number;
   incoming_count: number;
   supported_by_me: number;
@@ -456,4 +464,133 @@ export async function setSupport(
     });
   }
   return (await getOpinion(opinionId, userId))!;
+}
+
+export const MODERATION_REASON_MAX_LENGTH = 500;
+/** How far back the owner sees the pre-filter's counts. */
+export const FILTER_STATS_DAYS = 30;
+
+/**
+ * Throws unless the user owns the document.
+ *
+ * @throws {OpinionError} 404 when there is no such document, 403 when it is someone else's
+ */
+export async function assertOwner(
+  documentId: string,
+  userId: string,
+): Promise<void> {
+  const owner = await documentOwner(documentId);
+  if (owner === null) throw new OpinionError(404, "document not found");
+  if (owner !== userId) {
+    throw new OpinionError(403, "only the document's owner may do this");
+  }
+}
+
+/** Checks a moderation body. */
+export function parseModerationInput(body: unknown): ModerationInput {
+  const input = (body ?? {}) as Record<string, unknown>;
+  const action = input.action;
+  if (action !== "hide" && action !== "unhide") {
+    throw new OpinionError(400, "action must be hide or unhide");
+  }
+  const reason = typeof input.reason === "string" ? input.reason.trim() : "";
+  if (!reason || reason.length > MODERATION_REASON_MAX_LENGTH) {
+    throw new OpinionError(
+      400,
+      `reason must be 1–${MODERATION_REASON_MAX_LENGTH} characters`,
+    );
+  }
+  return { action, reason };
+}
+
+/** Every opinion on a document, hidden ones too, with the moderation record and the filter counts. */
+export async function ownerView(
+  documentId: string,
+  userId: string,
+): Promise<OwnerView> {
+  await assertOwner(documentId, userId);
+  const db = getDb();
+  const { rows = [] } = await db.exec(sql`${SELECT_OPINIONS(userId)}
+    WHERE o.document_id = ${documentId}
+    ORDER BY o.created_at ASC`);
+  const { rows: logs = [] } = await db.exec(sql`
+    SELECT l.id, l.opinion_id, l.action, l.reason, l.created_at
+      FROM moderation_logs l JOIN opinions o ON o.id = l.opinion_id
+     WHERE o.document_id = ${documentId}
+     ORDER BY l.created_at DESC`);
+  const since = new Date(Date.now() - FILTER_STATS_DAYS * 86_400_000)
+    .toISOString().slice(0, 10);
+  const { rows: stats = [] } = await db.exec(sql`
+    SELECT day, kind, count FROM filter_stats
+     WHERE document_id = ${documentId} AND day >= ${since}
+     ORDER BY day DESC, kind`);
+  return {
+    opinions: await toOpinions(rows as OpinionRow[], userId),
+    moderation: (logs as {
+      id: string;
+      opinion_id: string;
+      action: ModerationAction | "mark_duplicate";
+      reason: string;
+      created_at: string;
+    }[]).filter((l) => l.action !== "mark_duplicate").map((l) =>
+      ({
+        id: l.id,
+        opinionId: l.opinion_id,
+        action: l.action as ModerationAction,
+        reason: l.reason,
+        createdAt: l.created_at,
+      }) satisfies ModerationLog
+    ),
+    filterStats: (stats as unknown as FilterStat[]).map((s) => ({
+      day: s.day,
+      kind: s.kind,
+      count: Number(s.count),
+    })),
+  };
+}
+
+/**
+ * Hides an opinion, or shows a hidden one again, and records why. The document's owner only, and
+ * allowed after the deadline too — the record stays the owner's to keep in order.
+ *
+ * @returns The opinion as it now is
+ */
+export async function moderateOpinion(
+  opinionId: string,
+  userId: string,
+  input: ModerationInput,
+): Promise<Opinion> {
+  const db = getDb();
+  const row = await db.find(opinions, opinionId);
+  if (!row) throw new OpinionError(404, "opinion not found");
+  await assertOwner(row.document_id, userId);
+
+  const [from, to] = input.action === "hide"
+    ? ["published", "hidden"] as const
+    : ["hidden", "published"] as const;
+  // Conditional, so two owners' tabs cannot both act on the same state.
+  const updated = await db.exec(sql`
+    UPDATE opinions SET status = ${to}, updated_at = ${now()}
+     WHERE id = ${opinionId} AND status = ${from}`);
+  if (!updated.affectedRows) {
+    throw new OpinionError(
+      409,
+      input.action === "hide"
+        ? "the opinion is not shown"
+        : "the opinion is not hidden",
+    );
+  }
+  await db.create(moderationLogs, {
+    id: newId(),
+    opinion_id: opinionId,
+    actor_id: userId,
+    action: input.action,
+    reason: input.reason,
+    duplicate_of: null,
+    created_at: now(),
+  });
+
+  const { rows = [] } = await db.exec(sql`${SELECT_OPINIONS(userId)}
+    WHERE o.id = ${opinionId}`);
+  return (await toOpinions(rows as OpinionRow[], userId))[0];
 }

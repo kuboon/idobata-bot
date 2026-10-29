@@ -90,6 +90,9 @@ export const MyDocumentsCard = clientEntry(
                       {deadlineLabel(doc.closesAt, doc.open)} ・ 意見{" "}
                       {doc.opinionCount} 件
                     </span>
+                    <a href={routes.documentAdmin.href({ docId: doc.id })}>
+                      管理する
+                    </a>
                   </li>
                 ))}
               </ul>

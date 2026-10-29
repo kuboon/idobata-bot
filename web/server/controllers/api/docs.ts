@@ -1,5 +1,6 @@
 /**
- * `/api/docs` — the document list, one document with its segments, and registering a new one.
+ * `/api/docs` — the document list, one document with its segments, registering a new one, and
+ * the owner changing its title, description or deadline.
  *
  * Reading is open to anyone with a DPoP key; registering needs a signed-in user, and for now any
  * signed-in user may (docs/design.md §11 — a sysad role can restrict it later).
@@ -10,9 +11,12 @@ import { createController } from "@remix-run/fetch-router";
 import { routes } from "../../../client/routes.ts";
 import {
   createDocument,
+  documentOwner,
   getDocument,
   listDocuments,
+  parseDocumentPatch,
   parseNewDocument,
+  updateDocument,
 } from "../../lib/documents.ts";
 import {
   dpopClient,
@@ -68,6 +72,37 @@ export function createDocsController(auth: RequireUserOptions = {}) {
           const user = context.get(User) as User;
           const id = await createDocument(user.id, parsed.value);
           return Response.json({ id }, { status: 201, headers: noStore });
+        },
+      },
+
+      update: {
+        middleware: [requireUser(auth)],
+        async handler(context) {
+          const owner = await documentOwner(context.params.docId);
+          if (owner === null) {
+            return Response.json({ error: "not found" }, { status: 404 });
+          }
+          const user = context.get(User) as User;
+          if (owner !== user.id) {
+            return Response.json({
+              error: "only the document's owner may do this",
+            }, { status: 403 });
+          }
+          let body: unknown;
+          try {
+            body = await context.request.json();
+          } catch {
+            return Response.json({ error: "invalid JSON" }, { status: 400 });
+          }
+          const parsed = parseDocumentPatch(body);
+          if (!parsed.ok) {
+            return Response.json({ error: parsed.error }, { status: 400 });
+          }
+          await updateDocument(context.params.docId, parsed.value);
+          return Response.json(
+            { document: await getDocument(context.params.docId) },
+            { headers: noStore },
+          );
         },
       },
     },

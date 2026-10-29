@@ -26,6 +26,21 @@ Deno.test("worker answers /d/:docId with the static shell", async () => {
   assertEquals(requested, ["/d/_shell"]);
 });
 
+Deno.test("worker answers /d/:docId/admin with the owner page's shell", async () => {
+  const requested: string[] = [];
+  const ASSETS = {
+    fetch(request: Request) {
+      requested.push(new URL(request.url).pathname);
+      return Promise.resolve(new Response("<title>文書の管理</title>"));
+    },
+  };
+  const res = await worker.fetch(new Request("http://x/d/abc/admin"), {
+    ASSETS,
+  });
+  assertEquals(await res.text(), "<title>文書の管理</title>");
+  assertEquals(requested, ["/d/_shell/admin"]);
+});
+
 Deno.test("worker does not render pages (static assets answer those)", async () => {
   const res = await get("/my");
   assertEquals(res.status, 404);

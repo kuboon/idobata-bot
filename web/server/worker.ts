@@ -20,7 +20,11 @@ import type { D1DatabaseBinding } from "@remix-kbn/data-table-d1";
 import { routes } from "../client/routes.ts";
 import { useDatabase } from "./db/mod.ts";
 import { type AiBinding, useAi } from "./lib/chat/filter.ts";
-import { type AssetsBinding, serveDocumentShell } from "./document_shell.ts";
+import {
+  type AssetsBinding,
+  serveDocumentAdminShell,
+  serveDocumentShell,
+} from "./document_shell.ts";
 import { createChatController } from "./controllers/api/chat.ts";
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
@@ -73,6 +77,13 @@ router.get(
       ? serveDocumentShell(request, params.docId, assets)
       : new Response("Not Found", { status: 404 })) as never,
 );
+router.get(
+  routes.documentAdmin,
+  (({ request }: { request: Request }) =>
+    assets
+      ? serveDocumentAdminShell(request, assets)
+      : new Response("Not Found", { status: 404 })) as never,
+);
 
 export default {
   fetch(request: Request, env?: WorkerEnv): Promise<Response> {
@@ -83,7 +94,8 @@ export default {
       useAi(env.AI);
       databaseSet = true;
     }
-    assets ??= env?.ASSETS;
+    // Every request carries the same binding; taking it each time also lets each test bring its own.
+    if (env?.ASSETS) assets = env.ASSETS;
     return router.fetch(request);
   },
 };

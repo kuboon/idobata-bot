@@ -5,10 +5,12 @@
  */
 
 import type {
+  ModerationInput,
   Opinion,
   OpinionDetail,
   OpinionInput,
   OpinionList,
+  OwnerView,
 } from "./types.ts";
 
 /** A `fetch` that authenticates to the service; relative paths resolve against `baseUrl`. */
@@ -41,6 +43,10 @@ export interface OpinionClient {
   unsupport(opinionId: string): Promise<Opinion>;
   /** The signed-in user's own opinions, newest first, across documents. */
   mine(): Promise<Opinion[]>;
+  /** The owner's view of a document's opinions. The document's owner only. */
+  manage(documentId: string): Promise<OwnerView>;
+  /** Hides or shows an opinion again, with a reason. The document's owner only. */
+  moderate(opinionId: string, input: ModerationInput): Promise<Opinion>;
 }
 
 /** Builds a client for the opinion service. */
@@ -101,5 +107,12 @@ export function createOpinionClient(
       }).then((b) => b.opinion),
     mine: () =>
       call<{ opinions: Opinion[] }>("/api/me/opinions").then((b) => b.opinions),
+    manage: (documentId) =>
+      call<OwnerView>(`/api/docs/${id(documentId)}/manage`),
+    moderate: (opinionId, input) =>
+      call<{ opinion: Opinion }>(
+        `/api/opinions/${id(opinionId)}/moderation`,
+        { method: "POST", body: JSON.stringify(input) },
+      ).then((b) => b.opinion),
   };
 }

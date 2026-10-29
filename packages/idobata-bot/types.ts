@@ -50,7 +50,8 @@ export interface OpinionInput {
   targets: Target[];
 }
 
-export type OpinionStatus = "published" | "adopted";
+/** `hidden` only ever reaches the owner's view and the author's own list. */
+export type OpinionStatus = "published" | "adopted" | "hidden";
 
 /** An opinion as the service hands it out. */
 export interface Opinion {
@@ -91,4 +92,36 @@ export interface OpinionList {
   opinions: Opinion[];
   /** Opinions the owner hid: counted, so they are not silently gone (docs/design.md §5). */
   hiddenCount: number;
+}
+
+/** What a document's owner can do to an opinion. Always with a reason, which is public. */
+export type ModerationAction = "hide" | "unhide";
+
+/** `POST` of a moderation. */
+export interface ModerationInput {
+  action: ModerationAction;
+  reason: string;
+}
+
+/** One moderation, as the record keeps it. */
+export interface ModerationLog {
+  id: string;
+  opinionId: string;
+  action: ModerationAction;
+  reason: string;
+  createdAt: string;
+}
+
+/** Messages the chat's pre-filter turned away, per day (UTC) and kind. Counted, never kept. */
+export interface FilterStat {
+  day: string;
+  kind: string;
+  count: number;
+}
+
+/** `GET` of a document's opinions for its owner: hidden ones too, and the record. */
+export interface OwnerView {
+  opinions: Opinion[];
+  moderation: ModerationLog[];
+  filterStats: FilterStat[];
 }

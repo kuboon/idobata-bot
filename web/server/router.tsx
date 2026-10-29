@@ -35,6 +35,7 @@ import { Layout, type PageModule } from "../client/layout.tsx";
 import { DOCUMENT_SHELL_ID, routes } from "../client/routes.ts";
 
 import * as DocumentPage from "../client/pages/document.tsx";
+import * as DocumentAdminPage from "../client/pages/document_admin.tsx";
 import * as Home from "../client/pages/index.tsx";
 import * as My from "../client/pages/my.tsx";
 import * as NewDocument from "../client/pages/new.tsx";
@@ -137,6 +138,18 @@ const top = createController(routes, {
           <DocumentPage.default />
         </Layout>,
       ),
+    // The owner's page for every document, likewise one shell.
+    documentAdmin: (context) =>
+      context.render(
+        <Layout
+          title={DocumentAdminPage.title}
+          description={DocumentAdminPage.description}
+          image={null}
+          script={clientRuntime}
+        >
+          <DocumentAdminPage.default />
+        </Layout>,
+      ),
     jwks: jwksAction,
   },
 });
@@ -181,7 +194,8 @@ router.get(
  *
  * Pages are reached by following links from `/`. The exceptions are things nothing links to in
  * the static HTML: `/my` (the nav's link to it is drawn by the sign-in island, only once signed
- * in), the document page's shell (every `/d/:docId` is served from it, and the links to documents
+ * in), the document page's shell and its owner's page's (every `/d/:docId` and `/d/:docId/admin`
+ * is served from them, and the links to documents
  * are drawn by the list island), the social cards (an `og:image` is an absolute URL meant for someone else's server) and the
  * service worker (the push manager registers it by URL from script). `/api/*` is deliberately
  * absent.
@@ -190,6 +204,7 @@ export const entryPoints: readonly string[] = [
   "/",
   routes.my.href(),
   routes.document.href({ docId: DOCUMENT_SHELL_ID }),
+  routes.documentAdmin.href({ docId: DOCUMENT_SHELL_ID }),
   ...ogPaths(),
   "/sw.js",
 ];

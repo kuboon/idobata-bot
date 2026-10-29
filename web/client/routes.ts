@@ -37,6 +37,8 @@ export const routes = route("", {
    * page's island reads the ID back out of the URL.
    */
   document: get("/d/:docId"),
+  /** A document's page for its owner — static like the document page, from `/d/_shell/admin`. */
+  documentAdmin: get("/d/:docId/admin"),
   /** RP public JWKS — lets the IdP verify our `private_key_jwt` assertions. */
   jwks: get("/.well-known/jwks.json"),
   api: route("api", {
@@ -55,6 +57,8 @@ export const routes = route("", {
       create: post("/"),
       /** `?version=n` for a version other than the latest. */
       show: get("/:docId"),
+      /** The owner only: title, description and deadline. */
+      update: patch("/:docId"),
     }),
     /**
      * The opinion service (③ in docs/design.md §2): opinions, their targets and supports. It knows
@@ -69,6 +73,10 @@ export const routes = route("", {
       support: put("/opinions/:opinionId/support"),
       unsupport: del("/opinions/:opinionId/support"),
       mine: get("/me/opinions"),
+      /** The document's owner only: every opinion, hidden ones too, and the record. */
+      manage: get("/docs/:docId/manage"),
+      /** The document's owner only: hide or show again, with a public reason. */
+      moderate: post("/opinions/:opinionId/moderation"),
     }),
     /**
      * The AI chat about a document (docs/architecture.md §5): the history in, the turn out as

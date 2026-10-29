@@ -84,9 +84,10 @@ Markdown だけなら原本は D1 にそのまま入るので、R2・取り込�
 
 - 固定のページ（`/`、`/my`、`/new` 等）は SSG。データは islands が `/api/*`
   から取る。
-- 文書ページ `/d/:docId` は ID が動的なので SSG できない。`runWorkerFirst` に
-  `/d/*` を入れ、Worker が `env.ASSETS` から殻 `/d/_shell` を返す。
-  `HTMLRewriter` で `<title>` / OGP だけ文書のものに差し替える（共有リンク用）。
+- 文書ページ `/d/:docId` とオーナー用の `/d/:docId/admin` は ID が動的なので SSG
+  できない。`runWorkerFirst` に `/d/*` を入れ、Worker が `env.ASSETS` から殻
+  `/d/_shell`（`/d/_shell/admin`）を返す。 `HTMLRewriter` で `<title>` / OGP
+  だけ文書のものに差し替える（共有リンク用）。
 
 ## 2. 認証（id.kbn.one）
 
@@ -412,42 +413,43 @@ filter_stats(document_id, day, kind, count,               -- 前段フィルタ�
 DPoP proof は全 API で必須。🔒 はログイン必須、👑 はオーナー限定。⏱ は募集期日
 後に `403`。
 
-| メソッド・パス                                         | 内容                                                  |
-| ------------------------------------------------------ | ----------------------------------------------------- |
-| `GET /api/docs`                                        | 文書一覧                                              |
-| `POST /api/docs` 🔒                                    | 文書の登録（Markdown）                                |
-| `GET /api/docs/:docId`                                 | 文書と版のセグメント列（`?version=n`）                |
-| `GET /api/docs/:docId/opinions`                        | 意見一覧（公開分 + 非表示の件数）                     |
-| `GET /api/opinions/:id`                                | 意見の詳細（リンクしている／されている意見、賛同数）  |
-| `POST /api/docs/:docId/chat?v=` ⏱ (SSE)                | 対話の 1 ターン（§5）                                 |
-| `POST /api/docs/:docId/opinions` 🔒⏱                   | 意見の投稿                                            |
-| `PUT /api/opinions/:id/support` 🔒⏱ / `DELETE`         | 賛同 / 取り消し                                       |
-| `PATCH /api/opinions/:id` 🔒⏱ / `DELETE`               | 自分の意見の編集・削除（不可なら `409`、§4）          |
-| `GET /api/me` 🔒 / `PATCH`                             | 自分の nickname の取得・変更                          |
-| `GET /api/me/opinions` 🔒                              | 自分の意見一覧                                        |
-| `GET /api/me/documents` 🔒                             | 自分が登録した文書の一覧                              |
-| `POST /api/notify`                                     | サーバー起点の push 通知（IdP 経由）                  |
-| `GET /api/docs/:docId/diff?from=&to=`（予定）          | 差分と、hunk ごとの採用意見                           |
-| `GET /api/docs/:docId/live`（予定、WebSocket）         | リアルタイムイベント                                  |
-| `POST /api/docs/:docId/chat-ticket` ⏱（予定）          | チャットチケットの発行（未ログインは Turnstile 必須） |
-| `PATCH /api/docs/:docId` 👑（予定）                    | タイトル・説明・募集期日の変更                        |
-| `POST /api/opinions/:id/moderation` 👑（予定）         | 非表示 / 再表示 / 重複指定（理由必須）                |
-| `POST /api/docs/:docId/versions` 👑（予定）            | 新版の作成・編集                                      |
-| `POST /api/docs/:docId/versions/:n/release` 👑（予定） | リリース（差分を計算して保存）                        |
-| `PUT /api/changes/:id/adoptions` 👑（予定）            | hunk に採用意見を紐づけ                               |
+| メソッド・パス                                         | 内容                                                                  |
+| ------------------------------------------------------ | --------------------------------------------------------------------- |
+| `GET /api/docs`                                        | 文書一覧                                                              |
+| `POST /api/docs` 🔒                                    | 文書の登録（Markdown）                                                |
+| `GET /api/docs/:docId`                                 | 文書と版のセグメント列（`?version=n`）                                |
+| `GET /api/docs/:docId/opinions`                        | 意見一覧（公開分 + 非表示の件数）                                     |
+| `GET /api/opinions/:id`                                | 意見の詳細（リンクしている／されている意見、賛同数）                  |
+| `POST /api/docs/:docId/chat?v=` ⏱ (SSE)                | 対話の 1 ターン（§5）                                                 |
+| `POST /api/docs/:docId/opinions` 🔒⏱                   | 意見の投稿                                                            |
+| `PUT /api/opinions/:id/support` 🔒⏱ / `DELETE`         | 賛同 / 取り消し                                                       |
+| `PATCH /api/opinions/:id` 🔒⏱ / `DELETE`               | 自分の意見の編集・削除（不可なら `409`、§4）                          |
+| `GET /api/me` 🔒 / `PATCH`                             | 自分の nickname の取得・変更                                          |
+| `GET /api/me/opinions` 🔒                              | 自分の意見一覧                                                        |
+| `GET /api/me/documents` 🔒                             | 自分が登録した文書の一覧                                              |
+| `POST /api/notify`                                     | サーバー起点の push 通知（IdP 経由）                                  |
+| `GET /api/docs/:docId/diff?from=&to=`（予定）          | 差分と、hunk ごとの採用意見                                           |
+| `GET /api/docs/:docId/live`（予定、WebSocket）         | リアルタイムイベント                                                  |
+| `POST /api/docs/:docId/chat-ticket` ⏱（予定）          | チャットチケットの発行（未ログインは Turnstile 必須）                 |
+| `PATCH /api/docs/:docId` 🔒👑                          | タイトル・説明・募集期日の変更                                        |
+| `GET /api/docs/:docId/manage` 🔒👑                     | 非表示も含む全意見、モデレーションの記録、前段フィルタの件数（30 日） |
+| `POST /api/opinions/:id/moderation` 🔒👑               | 非表示 / 再表示（理由必須。重複指定は予定）                           |
+| `POST /api/docs/:docId/versions` 👑（予定）            | 新版の作成・編集                                                      |
+| `POST /api/docs/:docId/versions/:n/release` 👑（予定） | リリース（差分を計算して保存）                                        |
+| `PUT /api/changes/:id/adoptions` 👑（予定）            | hunk に採用意見を紐づけ                                               |
 
 ## 10. ページ
 
-| パス                             | 内容                                                         |
-| -------------------------------- | ------------------------------------------------------------ |
-| `/`                              | 全文書の一覧と登録ボタン                                     |
-| `/new`                           | 文書の登録                                                   |
-| `/d/:docId`                      | 最新版のビューア、段落の意見、右下に AI との対話             |
-| `/my`                            | 自分の文書・自分の意見・nickname・通知、サインアウト         |
-| `/d/:docId/v/:n`（予定）         | 特定の版                                                     |
-| `/d/:docId/diff/:a..:b`（予定）  | 差分。hunk ごとに採用された意見を表示                        |
-| `/d/:docId/o/:opinionId`（予定） | 意見の個別ページ                                             |
-| `/d/:docId/admin` 👑（予定）     | モデレーション、募集期日、新版の編集、リリース、採用の紐づけ |
+| パス                             | 内容                                                                               |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| `/`                              | 全文書の一覧と登録ボタン                                                           |
+| `/new`                           | 文書の登録                                                                         |
+| `/d/:docId`                      | 最新版のビューア、段落の意見、右下に AI との対話                                   |
+| `/my`                            | 自分の文書・自分の意見・nickname・通知、サインアウト                               |
+| `/d/:docId/v/:n`（予定）         | 特定の版                                                                           |
+| `/d/:docId/diff/:a..:b`（予定）  | 差分。hunk ごとに採用された意見を表示                                              |
+| `/d/:docId/o/:opinionId`（予定） | 意見の個別ページ                                                                   |
+| `/d/:docId/admin` 👑             | 文書の編集と募集期日、意見の非表示・再表示、前段フィルタの件数（新版と採用は予定） |
 
 他サイトへの組み込み（[design.md §12](./design.md#12-確認したいこと)）では、
 iframe 内は DPoP 鍵の保存先が分離され IdP へのリダイレクトも使いにくいので、
