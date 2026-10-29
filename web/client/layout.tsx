@@ -171,15 +171,13 @@ export function Shell(handle: Handle<ShellProps>) {
           idobata-bot
         </a>
         <nav mix={navStyle}>
-          <a href={routes.home.href()}>文書一覧</a>
           <NavAuth myHref={routes.my.href()} />
         </nav>
       </header>
       <main mix={[bandStyle, mainStyle]}>{handle.props.children}</main>
       <footer mix={[bandStyle, footerStyle]}>
         <p>
-          Built with <a href="https://remix.run">Remix v3</a> on{" "}
-          <a href="https://deno.com">Deno</a>.
+          <a href="https://dd2030.org/">デジタル民主主義2030</a>
         </p>
       </footer>
     </>

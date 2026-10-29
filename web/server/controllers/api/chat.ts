@@ -1,6 +1,6 @@
 /**
  * `POST /api/docs/:docId/chat?v=<version>` — one turn of the AI chat about a document, in
- * `@remix-kbn/helper-agent`'s wire format (docs/design.md §6). The query fixes the version the
+ * `@remix-kbn/helper-agent`'s wire format (docs/architecture.md §5). The query fixes the version the
  * conversation is about; the reader's selection is read and set by the page's tools. Open to
  * anyone with a DPoP key: chatting needs no sign-in, posting what comes of it does.
  */

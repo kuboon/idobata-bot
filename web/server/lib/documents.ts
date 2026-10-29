@@ -2,7 +2,7 @@
  * Documents and their versions, as the API hands them out.
  *
  * A document is registered as Markdown and stored as version 1, already released, split into
- * segments (docs/design.md §4). Later versions — drafts, release, diffs — build on the same
+ * segments (docs/architecture.md §3). Later versions — drafts, release, diffs — build on the same
  * tables.
  */
 
@@ -213,10 +213,19 @@ const SUMMARY_SELECT = sql`
     FROM documents d JOIN users u ON u.id = d.owner_id
 `;
 
-/** Every document, newest first. */
-export async function listDocuments(): Promise<DocumentSummary[]> {
+/**
+ * Documents, newest first.
+ *
+ * @param ownerId Only this user's, when given
+ */
+export async function listDocuments(
+  ownerId?: string,
+): Promise<DocumentSummary[]> {
   const { rows = [] } = await getDb().exec(
-    sql`${SUMMARY_SELECT} ORDER BY d.created_at DESC LIMIT 200`,
+    ownerId === undefined
+      ? sql`${SUMMARY_SELECT} ORDER BY d.created_at DESC LIMIT 200`
+      : sql`${SUMMARY_SELECT} WHERE d.owner_id = ${ownerId}
+          ORDER BY d.created_at DESC LIMIT 200`,
   );
   return (rows as SummaryRow[]).map(toSummary);
 }

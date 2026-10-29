@@ -115,10 +115,7 @@ export const ProfileCard = clientEntry(
       return (
         <section mix={cardStyle}>
           <h2>表示名</h2>
-          <p>
-            投稿した意見に表示される名前です。このサイトでだけ使われ、id.kbn.one
-            の名前は変わりません。
-          </p>
+          <p>投稿した意見に表示される名前です。</p>
           {nickname === null ? <p>読み込んでいます…</p> : (
             <div mix={rowStyle}>
               <input

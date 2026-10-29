@@ -45,10 +45,19 @@ export default defineConfig((ctx) => ({
       // Workers AI, for the chat's pre-filter (Clef).
       AI: bindings.ai(),
       // Migrated ahead of a deploy with `deno task db migrate --remote` (needs
-      // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission).
-      DB: bindings.d1({
-        name: ctx.isPreview ? "idobata-bot-preview" : "idobata-bot",
-      }),
+      // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission). Pinned by ID as well
+      // as name, so a preview can never resolve to the production database.
+      DB: bindings.d1(
+        ctx.isPreview
+          ? {
+            name: "idobata-bot-preview",
+            id: "438eec87-8a4d-4442-a428-b990218601d8",
+          }
+          : {
+            name: "idobata-bot",
+            id: "52da0b65-c245-4d83-9f9c-84b740b036c9",
+          },
+      ),
       ASSETS: bindings.assets(),
     },
   },

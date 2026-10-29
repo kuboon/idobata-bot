@@ -4,8 +4,10 @@
 意見を聞き出し、定型化して投稿する。Remix v3 + Deno で書き、Cloudflare Workers
 にデプロイする。認証は id.kbn.one。
 
-設計は [`docs/design.md`](./docs/design.md)。機能を足すときは先にそこを読み、
-決めたことが変わったら設計書も直す。
+設計は 2 つ。コンセプト（何を・なぜ）は [`docs/design.md`](./docs/design.md)、
+技術詳細（構成・認証・チャット・スキーマ・API）は
+[`docs/architecture.md`](./docs/architecture.md)。機能を足すときは先に読み、
+決めたことが変わったら直す。
 
 [kuboon/deno-remix-tmpl](https://github.com/kuboon/deno-remix-tmpl)
 から作った（server モード）。テンプレの init は済んでいて、テンプレ本体の事情
@@ -19,7 +21,7 @@
   - `web/server/` — router・asset bundler・API・config・og 画像
   - `web/tests/` — ブラウザ smoke テスト（opt-in）
 - `/my` — id.kbn.one を IdP として使うサインイン + プッシュ通知
-- `docs/design.md` — 設計書
+- `docs/design.md` — 設計（コンセプト）、`docs/architecture.md` — 技術詳細
 
 ## プッシュ通知 (id.kbn.one 連携)
 
@@ -74,7 +76,8 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 
 ## チャット（Claude API）
 
-設計書 §6。[`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent)
+`docs/architecture.md`
+§5。[`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent)
 の上に作る。`POST /api/docs/:docId/chat?v=<版>` が 1 ターンを helper-agent
 の形式（SSE）で返す（`controllers/api/chat.ts` が `helperAgentController` に
 `lib/chat/mod.ts` の `chatAgent` を渡す）。ログイン 不要。
@@ -117,8 +120,8 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 
 ## 認証 (API)
 
-RP 側にセッションは持たない（`docs/design.md`
-§3）。`web/server/middleware/auth.ts`:
+RP 側にセッションは持たない（`docs/architecture.md`
+§2）。`web/server/middleware/auth.ts`:
 
 - `dpopClient()` — 全 API に付ける。`DPoP` proof を検証し、鍵の thumbprint を
   `context.get(Client)` に置く。
@@ -231,8 +234,9 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `build:cf --preview` で Build Output を書き直してから
   `cf previews deploy --prebuilt`（preview 名は ブランチ名）。
 - preview は別の D1 `idobata-bot-preview` を使う（`cloudflare.config.ts` の
-  `ctx.isPreview`。`deno task build:cf --preview` が preview 用の Build Output
-  を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
+  `ctx.isPreview`。本番 `idobata-bot` とも名前と ID
+  の両方で指定してある。`deno task build:cf --preview` が preview 用の Build
+  Output を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
   whitelist に無いので、サインインは動かない。
 - 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
   `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの

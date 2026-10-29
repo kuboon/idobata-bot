@@ -26,7 +26,6 @@ export default function Home(_handle: Handle) {
         <a href={routes.newDocument.href()} mix={buttonStyle}>文書を登録する</a>
       </p>
 
-      <h2>文書一覧</h2>
       <DocumentList />
     </>
   );

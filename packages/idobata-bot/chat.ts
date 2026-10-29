@@ -1,5 +1,5 @@
 /**
- * The AI chat about a document, from the reader's side (docs/design.md §6).
+ * The AI chat about a document, from the reader's side (docs/architecture.md §5).
  *
  * The wire format is `@remix-kbn/helper-agent`'s: the browser holds the transcript, posts all of
  * it every turn, and reads the turn back as server-sent events. What is this service's own is

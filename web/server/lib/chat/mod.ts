@@ -1,5 +1,5 @@
 /**
- * The AI chat about a document (docs/design.md §6), as an agent for `@remix-kbn/helper-agent`'s
+ * The AI chat about a document (docs/architecture.md §5), as an agent for `@remix-kbn/helper-agent`'s
  * controller: check the transcript the browser sent, put the reader's message through the
  * pre-filter, then run the model — and the server's tools — until it answers or asks the browser
  * to act on the page: read or set the selection, or open the posting dialog (`draft_opinion`).
@@ -219,7 +219,7 @@ function plainText(message: ChatMessage): string {
   return message.role === "tool" ? "" : message.content;
 }
 
-/** Counts a refused message: the day and the kind, never its text (docs/design.md §6). */
+/** Counts a refused message: the day and the kind, never its text (docs/architecture.md §5). */
 async function countRejection(documentId: string, kind: string) {
   const day = new Date().toISOString().slice(0, 10);
   await getDb().exec(

@@ -1,5 +1,5 @@
 /**
- * The AI chat about a document, in the corner of the page (docs/design.md §6): a
+ * The AI chat about a document, in the corner of the page (docs/architecture.md §5): a
  * `@remix-kbn/helper-agent` panel in a non-modal `<dialog>`, so the reader can keep reading and
  * selecting while they talk.
  *

@@ -1,5 +1,6 @@
 /**
- * DocumentList — the home page's list of registered documents, from `GET /api/docs`.
+ * DocumentList — the home page's list of every document, from `GET /api/docs`: the open ones,
+ * then the closed ones, each by deadline, soonest first (no deadline last).
  *
  * An island rather than server-rendered HTML because the page is static: the build writes `/`
  * once, and the documents are only in the database.
@@ -30,6 +31,37 @@ interface Summary {
   open: boolean;
   opinionCount: number;
 }
+
+/** Soonest deadline first; documents without one last, newest of them first as the API sends. */
+function byDeadline(documents: Summary[]): Summary[] {
+  return documents
+    .map((doc, i) => ({ doc, i }))
+    .sort((a, b) =>
+      a.doc.closesAt && b.doc.closesAt
+        ? a.doc.closesAt.localeCompare(b.doc.closesAt)
+        : a.doc.closesAt
+        ? -1
+        : b.doc.closesAt
+        ? 1
+        : a.i - b.i
+    )
+    .map(({ doc }) => doc);
+}
+
+/** One document in the list. */
+const item = (doc: Summary) => (
+  <li key={doc.id} mix={cardStyle}>
+    <h3 mix={titleStyle}>
+      <a href={routes.document.href({ docId: doc.id })}>{doc.title}</a>
+    </h3>
+    {doc.description ? <p>{doc.description}</p> : null}
+    <span mix={metaStyle}>
+      {deadlineLabel(doc.closesAt, doc.open)} ・ 意見 {doc.opinionCount} 件 ・
+      {" "}
+      {doc.owner.nickname}
+    </span>
+  </li>
+);
 
 export const DocumentList = clientEntry(
   import.meta.url,
@@ -63,23 +95,21 @@ export const DocumentList = clientEntry(
       if (documents.length === 0) {
         return <p>登録済みの文書はまだありません。</p>;
       }
+      const open = byDeadline(documents.filter((d) => d.open));
+      const closed = byDeadline(documents.filter((d) => !d.open));
       return (
-        <ul mix={listStyle}>
-          {documents.map((doc) => (
-            <li key={doc.id} mix={cardStyle}>
-              <h3 mix={titleStyle}>
-                <a href={routes.document.href({ docId: doc.id })}>
-                  {doc.title}
-                </a>
-              </h3>
-              {doc.description ? <p>{doc.description}</p> : null}
-              <span mix={metaStyle}>
-                {deadlineLabel(doc.closesAt, doc.open)} ・ 意見{" "}
-                {doc.opinionCount} 件 ・ {doc.owner.nickname}
-              </span>
-            </li>
-          ))}
-        </ul>
+        <>
+          <h2>募集中</h2>
+          {open.length === 0
+            ? <p mix={metaStyle}>いま募集中の文書はありません。</p>
+            : <ul mix={listStyle}>{open.map(item)}</ul>}
+          {closed.length === 0 ? null : (
+            <>
+              <h2>募集終了</h2>
+              <ul mix={listStyle}>{closed.map(item)}</ul>
+            </>
+          )}
+        </>
       );
     };
   },

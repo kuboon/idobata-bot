@@ -77,7 +77,7 @@ Deno.test({
           timeout: 10_000,
         });
 
-        // The sign-in card leaves its "checking" state once the DPoP init and the IdP probe have
+        // The sign-out island leaves its "checking" state once the DPoP init and the IdP probe have
         // both settled — which only happens if the island hydrated and ran its setup.
         await page.waitForFunction(
           () =>

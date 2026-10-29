@@ -1,5 +1,6 @@
 /**
- * `/api/me` — the signed-in user's own record: who they are here, and the nickname they go by.
+ * `/api/me` — the signed-in user's own record: who they are here, the nickname they go by, and
+ * the documents they registered.
  *
  * The nickname is this app's, seeded from the IdP's on first sign-in (docs/design.md §5).
  */
@@ -9,6 +10,7 @@ import { createController } from "@remix-run/fetch-router";
 import { routes } from "../../../client/routes.ts";
 import { getDb } from "../../db/mod.ts";
 import { now, users } from "../../db/schema.ts";
+import { listDocuments } from "../../lib/documents.ts";
 import {
   dpopClient,
   NICKNAME_MAX_LENGTH,
@@ -29,6 +31,13 @@ export function createMeController(auth: RequireUserOptions = {}) {
       show(context) {
         const user = context.get(User);
         return Response.json(user, {
+          headers: { "cache-control": "no-store" },
+        });
+      },
+
+      async documents(context) {
+        const user = context.get(User);
+        return Response.json({ documents: await listDocuments(user.id) }, {
           headers: { "cache-control": "no-store" },
         });
       },

@@ -32,7 +32,7 @@ export interface ChatModel {
   ): Promise<BetaMessage>;
 }
 
-/** Sonnet 5.5 at low effort: a chat, not a reasoning task (docs/design.md §6). */
+/** Sonnet 5.5 at low effort: a chat, not a reasoning task (docs/architecture.md §5). */
 export const CHAT_MODEL = "claude-sonnet-5-5";
 
 /** The Claude API, streamed. */

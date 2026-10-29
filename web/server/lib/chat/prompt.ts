@@ -6,7 +6,7 @@
  * history (turns 2 onwards) sits on top of it — an earlier turn that changed would invalidate the
  * thinking blocks after it. So it holds only what is fixed for the conversation: the version's
  * segments. What changes while the reader talks is looked up instead — the opinions with
- * `search_opinions`, the reader's selection with `get_selection` (docs/design.md §6).
+ * `search_opinions`, the reader's selection with `get_selection` (docs/architecture.md §5).
  */
 
 import type {

@@ -1,7 +1,7 @@
 /**
  * Who is calling: the DPoP key every request carries, and the id.kbn.one user behind it.
  *
- * There is no session on this side (docs/design.md §3). The browser signs every API request with
+ * There is no session on this side (docs/architecture.md §2). The browser signs every API request with
  * its DPoP key, and once signed in also sends the IdP's token: `Authorization: DPoP <jws>`, where
  * `jws` is what `${IDP_ORIGIN}/session` returned — an ES256 JWT whose `cnf.jkt` is that same key's
  * thumbprint. Two middlewares check that, in order:
