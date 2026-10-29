@@ -1,0 +1,64 @@
+name: preview
+
+# A Worker Preview per pull request to main, deleted when the PR closes. It
+# uses its own D1 (`idobata-bot-preview`, see cloudflare.config.ts), so a PR
+# never touches the production data. The preview's URL is in the job summary.
+#
+# Sign-in does not work on a preview: its origin is not the RP_ORIGIN the IdP
+# whitelists.
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, closed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # Fork PRs get no secrets, so there is nothing to deploy with.
+    if: >-
+      github.event.action != 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno task build:cf --preview
+      - name: Deploy the preview
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -o pipefail
+          deno task cf previews deploy "pr-${{ github.event.pull_request.number }}" --prebuilt \
+            2>&1 | tee "$RUNNER_TEMP/preview.log"
+          # cf ends with the deployment as a JSON object, its braces on lines of their own.
+          urls=$(awk '/^\{$/,/^\}$/' "$RUNNER_TEMP/preview.log" \
+            | jq -r '(.preview_urls + .deployment_urls)[]' | sort -u)
+          {
+            echo "### Preview for #${{ github.event.pull_request.number }}"
+            echo "${urls:-No URL was returned: is previewUrls on in cloudflare.config.ts?}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  delete:
+    if: >-
+      github.event.action == 'closed' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - run: deno task cf previews delete "pr-${{ github.event.pull_request.number }}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}

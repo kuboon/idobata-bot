@@ -190,6 +190,13 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `web/dist` を `web/server/cf_build.ts` が Build Output Specification
   (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
   (`deno task cf ...` が `npm:cf` の実行)。
+- main への PR には Worker Preview（`.github/workflows/preview.yml`）。
+  `deno task build:cf --preview` が preview 用の Build Output を書き、
+  `cf previews deploy pr-<番号> --prebuilt` で出す（URL は job summary）。PR を
+  閉じると消す。preview は別の D1 `idobata-bot-preview` を使う
+  （`cloudflare.config.ts` の
+  `ctx.isPreview`）。マイグレーションは両方に当てる。 preview の origin は IdP
+  の whitelist に無いので、サインインは動かない。
 - 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
   `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの
   ブラウザからの unsafe メソッド（`POST /api/notify` など）を token 無しで

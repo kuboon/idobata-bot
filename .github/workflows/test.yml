@@ -18,6 +18,9 @@ jobs:
       - run: deno task test
       - run: deno task build
       - run: deno task build:cf
+      # Loads the bundled Worker without a DOM, as workerd does: a module that
+      # touches a browser global at load fails here instead of at deploy.
+      - run: deno eval 'await import("./web/worker-dist/worker.js")'
       - run: deno task cf deploy --prebuilt --dry-run
       # The browser smoke test's binary, taken from the GitHub release rather than with
       # `npm:@lightpanda/browser install`: that command checks the download against
