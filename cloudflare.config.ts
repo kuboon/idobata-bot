@@ -19,6 +19,9 @@ export default defineConfig((ctx) => ({
     name: "idobata-bot",
     compatibilityDate: "2026-10-01",
     entrypoint: "./web/worker-dist/worker.js",
+    // `<preview>-idobata-bot.<subdomain>.workers.dev` for each PR's preview (preview.yml); off
+    // by default, and without it a preview deploys with no URL.
+    previewUrls: true,
     assets: {
       htmlHandling: "auto-trailing-slash",
       notFoundHandling: "none",
