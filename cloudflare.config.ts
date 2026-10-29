@@ -26,11 +26,10 @@ export default defineConfig({
     env: {
       IDP_ORIGIN: bindings.text("https://id.kbn.one"),
       RP_ORIGIN: bindings.text("https://idobata-bot.kuboon.workers.dev"),
-      // Secrets, declared here so a deploy keeps them. The deploy workflow supplies them
-      // (`web/server/deploy_secrets.ts`): RP_SIGNING_KEY_JWK is generated on the first deploy,
-      // ANTHROPIC_API_KEY comes from the repository's Actions secret. Either can also be set by
-      // hand with `deno task cf workers secrets update <NAME> --worker idobata-bot
-      // --type secret_text --text ...`.
+      // Secrets, declared here so a deploy keeps them, and set on the Worker only:
+      // RP_SIGNING_KEY_JWK by the manual workflow `.github/workflows/rp-signing-key.yml`,
+      // ANTHROPIC_API_KEY by hand with `deno task cf workers secrets update ANTHROPIC_API_KEY
+      // --worker idobata-bot --type secret_text --text ...`.
       RP_SIGNING_KEY_JWK: bindings.secret(),
       // The Claude API key for the chat (`web/server/lib/chat/`).
       ANTHROPIC_API_KEY: bindings.secret(),
