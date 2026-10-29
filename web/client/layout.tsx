@@ -171,7 +171,6 @@ export function Shell(handle: Handle<ShellProps>) {
           idobata-bot
         </a>
         <nav mix={navStyle}>
-          <a href={routes.home.href()}>文書一覧</a>
           <NavAuth myHref={routes.my.href()} />
         </nav>
       </header>

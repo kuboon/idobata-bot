@@ -46,6 +46,8 @@ export const routes = route("", {
     me: route("me", {
       show: get("/"),
       update: patch("/"),
+      /** The documents the user registered. */
+      documents: get("/documents"),
     }),
     docs: route("docs", {
       index: get("/"),

@@ -4,6 +4,7 @@ import { createRouter } from "@remix-run/fetch-router";
 import { routes } from "../../../client/routes.ts";
 import { openLocalDatabase } from "../../db/local.ts";
 import { appUrl, dpopClientFor, fakeIdp } from "../../testing/auth.ts";
+import { createDocument } from "../../lib/documents.ts";
 import { createMeController } from "./me.ts";
 
 async function setup() {
@@ -111,4 +112,33 @@ Deno.test("an empty or too-long nickname is a 400", async () => {
     assertEquals(res.status, 400);
     await res.body?.cancel();
   }
+});
+
+Deno.test("/api/me/documents lists only the documents the user registered", async () => {
+  const { idp, fetchDpop, thumbprint } = await setup();
+  const as = async (userId: string) => {
+    const token = await idp.token(userId, thumbprint, { nickname: userId });
+    const headers = { authorization: `DPoP ${token}` };
+    // Signing in creates the user row the document's owner joins on.
+    await (await fetchDpop(url("/api/me"), { headers })).body?.cancel();
+    return headers;
+  };
+  const mine = await as("user-1");
+  await as("user-2");
+  const newDoc = (title: string) => ({
+    title,
+    description: "",
+    markdown: "本文",
+    closesAt: null,
+  });
+  await createDocument("user-1", newDoc("自分の文書"));
+  await createDocument("user-2", newDoc("他人の文書"));
+
+  const res = await fetchDpop(url("/api/me/documents"), { headers: mine });
+  assertEquals(res.status, 200);
+  const { documents } = await res.json();
+  assertEquals(
+    documents.map((d: { title: string }) => d.title),
+    ["自分の文書"],
+  );
 });
