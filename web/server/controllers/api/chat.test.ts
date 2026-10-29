@@ -1,20 +1,22 @@
 /**
- * The chat end to end with a scripted model: what reaches the model, how a tool turn runs, and
- * what the browser gets back — through the opinion module's own stream reader.
+ * The chat end to end with a scripted model, through `@remix-kbn/helper-agent`'s own session —
+ * what the browser runs: what reaches the model, how a tool turn runs, and how a draft comes back
+ * as the browser's `draft_opinion` call.
  */
 
 import { assert, assertEquals } from "@std/assert";
 import { createRouter } from "@remix-run/fetch-router";
+import { type ChatDraft, chatUrl, DRAFT_TOOL_NAME } from "@kuboon/idobata-bot";
 import {
-  type ChatEvent,
-  type ChatMessage,
-  sendChatTurn,
-} from "@kuboon/idobata-bot";
+  type ClientTool,
+  HelperAgentSession,
+} from "@remix-kbn/helper-agent/client";
 import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 import { routes } from "../../../client/routes.ts";
 import { openLocalDatabase } from "../../db/local.ts";
 import { filterStats } from "../../db/schema.ts";
+import { REJECTED_MESSAGE } from "../../lib/chat/mod.ts";
 import { useAi } from "../../lib/chat/filter.ts";
 import type { ChatModel, ModelRequest } from "../../lib/chat/model.ts";
 import { appUrl, dpopClientFor, fakeIdp } from "../../testing/auth.ts";
@@ -53,7 +55,10 @@ async function setup(model: ChatModel | null) {
   const fetch = (url: string, init: RequestInit = {}) => {
     const headers = new Headers(init.headers);
     headers.set("authorization", `DPoP ${token}`);
-    return fetchDpop(appUrl(url), { ...init, headers });
+    return fetchDpop(url.startsWith("/") ? appUrl(url) : url, {
+      ...init,
+      headers,
+    });
   };
 
   const created = await fetch("/api/docs", {
@@ -68,42 +73,80 @@ async function setup(model: ChatModel | null) {
   const { document } = await (await fetch(`/api/docs/${docId}`)).json();
   const keys = (document.segments as { key: string }[]).map((s) => s.key);
 
-  const turn = async (messages: ChatMessage[], segmentKeys = [keys[1]]) => {
-    const events: ChatEvent[] = [];
-    for await (
-      const event of sendChatTurn({
-        fetch,
-        documentId: docId,
-        request: { versionNumber: 1, segmentKeys, messages },
-      })
-    ) events.push(event);
-    return events;
+  /** A conversation, as the page holds it: the drafts it was handed, and what it answers. */
+  const session = (answer = "読者が投稿しました。") => {
+    const drafts: ChatDraft[] = [];
+    const pageCalls: [string, unknown][] = [];
+    const pageTool = (name: string, result: string): ClientTool => ({
+      name,
+      description: name,
+      inputSchema: { type: "object" },
+      run(input) {
+        pageCalls.push([name, input]);
+        return result;
+      },
+    });
+    const draftTool: ClientTool = {
+      name: DRAFT_TOOL_NAME,
+      description: "投稿ダイアログを開く",
+      inputSchema: { type: "object" },
+      run(input) {
+        drafts.push(input as ChatDraft);
+        return answer;
+      },
+    };
+    const chat = new HelperAgentSession({
+      transport: {
+        url: appUrl(chatUrl(docId, 1)),
+        fetch: async (request) =>
+          fetch(request.url, {
+            method: request.method,
+            headers: request.headers,
+            body: await request.text(),
+          }),
+      },
+      tools: [
+        draftTool,
+        pageTool("get_selection", "読者は段落 1 を選んでいます。"),
+        pageTool("select_segments", "選びました。"),
+      ],
+    });
+    return { chat, drafts, pageCalls };
   };
-  return { db, fetch, docId, keys, turn };
+  /** Posts a transcript as is, for the ones a page would not send. */
+  const post = (messages: unknown[]) =>
+    fetch(chatUrl(docId, 1), {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ messages }),
+    });
+  return { db, docId, keys, session, post };
 }
 
-const user = (text: string): ChatMessage => ({ role: "user", content: text });
+const reply = (text: string): Partial<BetaMessage> => ({
+  stop_reason: "end_turn",
+  content: [{ type: "text", text, citations: null }],
+});
 
-Deno.test("a turn streams the answer and hands back what it added", async () => {
-  const { model, requests } = scripted([{
-    stop_reason: "end_turn",
-    content: [{ type: "text", text: "こんにちは", citations: null }],
-  }]);
-  const { turn } = await setup(model);
+Deno.test("a turn streams the answer, with the API's blocks as its state", async () => {
+  const { model, requests } = scripted([reply("こんにちは")]);
+  const { session } = await setup(model);
+  const { chat } = session();
 
-  const events = await turn([user("この段落はどういう意味？")]);
-  assertEquals(events, [
-    { type: "text", text: "こんにちは" },
+  await chat.send("この段落はどういう意味？");
+  assertEquals(chat.error, null);
+  assertEquals(chat.messages, [
+    { role: "user", content: "この段落はどういう意味？" },
     {
-      type: "done",
-      messages: [{
-        role: "assistant",
-        content: [{ type: "text", text: "こんにちは", citations: null }],
-      }],
+      role: "assistant",
+      content: "こんにちは",
+      state: JSON.stringify([
+        { type: "text", text: "こんにちは", citations: null },
+      ]),
     },
   ]);
 
-  // The document goes first, one block per segment, cached; the selection with it.
+  // The document goes first, one block per segment, cached — the same for every reader.
   const [first, second] = requests[0].messages;
   assertEquals(first.role, "user");
   const [doc, selection] = first.content as never[] as {
@@ -119,44 +162,44 @@ Deno.test("a turn streams the answer and hands back what it added", async () => 
     "本文2",
   ]);
   assertEquals(doc.cache_control, { type: "ephemeral", ttl: "1h" });
-  assert(selection.text!.includes("1"));
-  assertEquals(second as unknown, user("この段落はどういう意味？"));
+  assert(selection.text!.includes("get_selection"));
+  assertEquals(second as unknown, {
+    role: "user",
+    content: [{ type: "text", text: "この段落はどういう意味？" }],
+  });
 });
 
 Deno.test("the first message is the same bytes every turn", async () => {
-  const reply = (text: string): Partial<BetaMessage> => ({
-    stop_reason: "end_turn",
-    content: [{ type: "text", text, citations: null }],
-  });
   const { model, requests } = scripted([reply("一"), reply("二")]);
-  const { turn } = await setup(model);
+  const { session } = await setup(model);
+  const { chat } = session();
 
-  const history: ChatMessage[] = [user("最初")];
-  const done = (await turn(history)).at(-1) as Extract<
-    ChatEvent,
-    { type: "done" }
-  >;
-  history.push(...done.messages, user("次"));
-  await turn(history);
+  await chat.send("最初");
+  await chat.send("次");
 
   assertEquals(
     JSON.stringify(requests[1].messages[0]),
     JSON.stringify(requests[0].messages[0]),
   );
+  // The document, then 最初, the answer replayed from its state, and 次.
   assertEquals(requests[1].messages.length, 4);
+  assertEquals(
+    requests[1].messages[2].content,
+    [{ type: "text", text: "一" }] as never,
+  );
 });
 
-Deno.test("tools run on the server and a draft reaches the browser", async () => {
+Deno.test("search runs on the server; a draft opens in the browser and its answer goes back", async () => {
   const { model, requests } = scripted([
     {
       stop_reason: "tool_use",
       content: [
-        { type: "text", text: "似た意見を探します。", citations: null },
+        { type: "text", text: "この段落の意見を見ます。", citations: null },
         {
           type: "tool_use",
           id: "t1",
           name: "search_opinions",
-          input: { query: "予算", segment_indices: [] },
+          input: { query: "", segment_indices: [1] },
         },
       ],
     },
@@ -182,50 +225,137 @@ Deno.test("tools run on the server and a draft reaches the browser", async () =>
         },
       }],
     },
-    {
-      stop_reason: "end_turn",
-      content: [{ type: "text", text: "下書きです。", citations: null }],
-    },
+    reply("投稿ありがとうございました。"),
   ]);
-  const { turn, keys } = await setup(model);
+  const { session, keys } = await setup(model);
+  const { chat, drafts } = session();
 
-  const events = await turn([user("予算が気になる")]);
-  const draft = events.find((e) => e.type === "draft");
-  assertEquals(draft, {
-    type: "draft",
-    draft: {
-      type: "opinion",
-      input: {
-        title: "予算の根拠",
-        claim: "根拠を示すべき",
-        reason: "妥当か判断できない",
-        suggestion: "",
-        targets: [{ kind: "segment", segmentKey: keys[1], stance: "question" }],
-      },
+  await chat.send("予算が気になる");
+  assertEquals(chat.error, null);
+
+  // The browser was handed the draft with segment keys, not block numbers.
+  assertEquals(drafts, [{
+    type: "opinion",
+    input: {
+      title: "予算の根拠",
+      claim: "根拠を示すべき",
+      reason: "妥当か判断できない",
+      suggestion: "",
+      targets: [{ kind: "segment", segmentKey: keys[1], stance: "question" }],
     },
-  });
+  }]);
 
-  // The search's result went back to the model as a tool result.
+  // The search's result went back to the model inside the first request.
   const toolTurn = requests[1].messages.at(-1)!;
   assertEquals(toolTurn.role, "user");
   const [result] = toolTurn.content as { type: string; tool_use_id: string }[];
   assertEquals([result.type, result.tool_use_id], ["tool_result", "t1"]);
 
-  const done = events.at(-1) as Extract<ChatEvent, { type: "done" }>;
-  assertEquals(done.type, "done");
-  // assistant, results, assistant, results, assistant
-  assertEquals(done.messages.map((m) => m.role), [
-    "assistant",
-    "user",
-    "assistant",
-    "user",
-    "assistant",
+  // The browser's answer went back in a second request, after the replayed turn.
+  assertEquals(requests.length, 3);
+  const answered = requests[2].messages.at(-1)!;
+  assertEquals(answered.content as unknown, [{
+    type: "tool_result",
+    tool_use_id: "t2",
+    content: "読者が投稿しました。",
+  }]);
+  assertEquals(chat.messages.at(-1), {
+    role: "assistant",
+    content: "投稿ありがとうございました。",
+    state: JSON.stringify([
+      { type: "text", text: "投稿ありがとうございました。", citations: null },
+    ]),
+  });
+});
+
+Deno.test("the page's tools read and set the selection in the browser", async () => {
+  const { model, requests } = scripted([
+    {
+      stop_reason: "tool_use",
+      content: [{
+        type: "tool_use",
+        id: "g1",
+        name: "get_selection",
+        input: {},
+      }],
+    },
+    {
+      stop_reason: "tool_use",
+      content: [
+        { type: "text", text: "それはこの部分ですね。", citations: null },
+        {
+          type: "tool_use",
+          id: "s1",
+          name: "select_segments",
+          input: { segment_indices: [2] },
+        },
+      ],
+    },
+    reply("この段落への意見はまだありません。"),
   ]);
+  const { session } = await setup(model);
+  const { chat, pageCalls } = session();
+
+  await chat.send("期間が短いと思う");
+  assertEquals(chat.error, null);
+  assertEquals(pageCalls, [
+    ["get_selection", {}],
+    ["select_segments", { segment_indices: [2] }],
+  ]);
+  // Each answer went back to the model as the result of its call.
+  assertEquals(requests.length, 3);
+  assertEquals(requests[1].messages.at(-1)!.content as unknown, [{
+    type: "tool_result",
+    tool_use_id: "g1",
+    content: "読者は段落 1 を選んでいます。",
+  }]);
+  assertEquals(requests[2].messages.at(-1)!.content as unknown, [{
+    type: "tool_result",
+    tool_use_id: "s1",
+    content: "選びました。",
+  }]);
+});
+
+Deno.test("a draft that does not check out goes back to the model, not the browser", async () => {
+  const { model, requests } = scripted([
+    {
+      stop_reason: "tool_use",
+      content: [{
+        type: "tool_use",
+        id: "t1",
+        name: "draft_opinion",
+        input: {
+          type: "opinion",
+          support_opinion_id: "",
+          title: "x",
+          claim: "y",
+          reason: "z",
+          suggestion: "",
+          targets: [{
+            kind: "segment",
+            segment_index: 99,
+            opinion_id: "",
+            stance: "concern",
+          }],
+        },
+      }],
+    },
+    reply("段落を確かめます。"),
+  ]);
+  const { session } = await setup(model);
+  const { chat, drafts } = session();
+
+  await chat.send("意見があります");
+  assertEquals(drafts, []);
+  const result = (requests[1].messages.at(-1)!.content as {
+    is_error?: boolean;
+  }[])[0];
+  assertEquals(result.is_error, true);
 });
 
 Deno.test("the pre-filter refuses off-topic messages and counts them", async () => {
   const { model, requests } = scripted([]);
-  const { turn, db, docId } = await setup(model);
+  const { session, db, docId } = await setup(model);
   useAi({
     run: () =>
       Promise.resolve({
@@ -239,8 +369,12 @@ Deno.test("the pre-filter refuses off-topic messages and counts them", async () 
       }),
   });
   try {
-    const events = await turn([user("Python でクイックソートを書いて")]);
-    assertEquals(events.map((e) => e.type), ["rejected"]);
+    const { chat } = session();
+    await chat.send("Python でクイックソートを書いて");
+    assertEquals(chat.messages.at(-1), {
+      role: "assistant",
+      content: REJECTED_MESSAGE,
+    });
     assertEquals(requests.length, 0);
     const stats = await db.findMany(filterStats, {
       where: { document_id: docId },
@@ -251,26 +385,43 @@ Deno.test("the pre-filter refuses off-topic messages and counts them", async () 
   }
 });
 
-Deno.test("the history is checked before the model is called", async () => {
+Deno.test("the transcript is checked before the model is called", async () => {
   const { model, requests } = scripted([]);
-  const { turn } = await setup(model);
+  const { post } = await setup(model);
 
-  const refused = async (messages: ChatMessage[]) => {
-    const events = await turn(messages);
-    assertEquals(events.map((e) => e.type), ["error"]);
+  const refused = async (messages: unknown[]) => {
+    const response = await post(messages);
+    const body = await response.text();
+    assert(
+      !response.ok || body.includes('"type":"error"'),
+      `accepted: ${body}`,
+    );
   };
   await refused([{ role: "assistant", content: "最後が AI" }]);
-  await refused([{
-    role: "user",
-    content: [{ type: "document", source: { type: "text", data: "x" } }],
-  }]);
-  await refused([user("x".repeat(3000))]);
+  // A state holding a block the server never writes.
+  await refused([
+    {
+      role: "assistant",
+      content: "",
+      state: JSON.stringify([{
+        type: "document",
+        source: { type: "text", data: "x" },
+      }]),
+    },
+    { role: "user", content: "x" },
+  ]);
+  // A result for a call nobody made.
+  await refused([
+    { role: "user", content: "x" },
+    { role: "tool", results: [{ id: "nobody", content: "y" }] },
+  ]);
+  await refused([{ role: "user", content: "x".repeat(3000) }]);
   assertEquals(requests.length, 0);
 });
 
 Deno.test("without an API key the chat answers 503", async () => {
-  const { turn } = await setup(null);
-  assertEquals(await turn([user("こんにちは")]), [
-    { type: "error", message: "チャットは準備中です。" },
-  ]);
+  const { post } = await setup(null);
+  const response = await post([{ role: "user", content: "こんにちは" }]);
+  assertEquals(response.status, 503);
+  assertEquals(await response.json(), { error: "チャットは準備中です。" });
 });

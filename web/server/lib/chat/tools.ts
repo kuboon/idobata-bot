@@ -14,8 +14,6 @@ export interface ToolContext {
   documentId: string;
   /** The conversation's version, in order — block `i` is `segments[i]`. */
   segments: readonly SegmentView[];
-  /** Hands a draft to the reader. */
-  onDraft(draft: ChatDraft): void;
 }
 
 export interface ToolResult {
@@ -107,7 +105,7 @@ async function getOpinion(
   };
 }
 
-interface DraftInput {
+export interface DraftInput {
   type: "opinion" | "support";
   support_opinion_id: string;
   title: string;
@@ -122,33 +120,31 @@ interface DraftInput {
   }[];
 }
 
-async function draftOpinion(
+/**
+ * Checks a `draft_opinion` call and turns it into what the browser opens the posting dialog with:
+ * block numbers become segment keys, and an opinion to support must be on this document.
+ *
+ * @returns The draft, or the error result the model reads instead
+ */
+export async function resolveDraft(
   input: DraftInput,
   context: ToolContext,
-): Promise<ToolResult> {
+): Promise<{ draft: ChatDraft } | { error: ToolResult }> {
+  const error = (content: string) => ({ error: { content, isError: true } });
   if (input.type === "support") {
     const opinion = await getOpinionDetail(input.support_opinion_id, null);
     if (!opinion || opinion.documentId !== context.documentId) {
-      return {
-        content: "その ID の意見はこの文書にありません。",
-        isError: true,
-      };
+      return error("その ID の意見はこの文書にありません。");
     }
-    context.onDraft({ type: "support", opinionId: opinion.id });
-    return {
-      content: "賛同の提案を読者に示しました。賛同するかは読者が決めます。",
-    };
+    return { draft: { type: "support", opinionId: opinion.id } };
   }
 
   const targets: Target[] = [];
-  for (const t of input.targets) {
+  for (const t of input.targets ?? []) {
     if (t.kind === "segment") {
       const segment = context.segments[t.segment_index];
       if (!segment) {
-        return {
-          content: `文書ブロック ${t.segment_index} はありません。`,
-          isError: true,
-        };
+        return error(`文書ブロック ${t.segment_index} はありません。`);
       }
       targets.push({
         kind: "segment",
@@ -166,32 +162,30 @@ async function draftOpinion(
     }
   }
   if (targets.length === 0) {
-    return {
-      content: "targets が空です。何に対する意見か、一つ以上指定してください。",
-      isError: true,
-    };
+    return error(
+      "targets が空です。何に対する意見か、一つ以上指定してください。",
+    );
   }
-  if (!input.title.trim() || !input.claim.trim()) {
-    return { content: "title と claim は必須です。", isError: true };
+  if (!input.title?.trim() || !input.claim?.trim()) {
+    return error("title と claim は必須です。");
   }
-  context.onDraft({
-    type: "opinion",
-    input: {
-      title: input.title,
-      claim: input.claim,
-      reason: input.reason,
-      suggestion: input.suggestion,
-      targets,
-    },
-  });
   return {
-    content:
-      "下書きを読者に示しました。読者が内容を直して、自分で投稿します。投稿されたかどうかは分かりません。",
+    draft: {
+      type: "opinion",
+      input: {
+        title: input.title,
+        claim: input.claim,
+        reason: input.reason ?? "",
+        suggestion: input.suggestion ?? "",
+        targets,
+      },
+    },
   };
 }
 
 /**
- * Runs one tool call.
+ * Runs one of the server's tools. `draft_opinion` is not one: the browser runs it, after
+ * {@link resolveDraft}.
  *
  * @returns The result for the model — an unknown tool or a failure is an error result, so the
  *   model can recover rather than the turn ending
@@ -207,8 +201,6 @@ export async function runTool(
         return await searchOpinions(input as never, context);
       case "get_opinion":
         return await getOpinion(input as never, context);
-      case "draft_opinion":
-        return await draftOpinion(input as DraftInput, context);
       default:
         return { content: `ツール ${name} はありません。`, isError: true };
     }

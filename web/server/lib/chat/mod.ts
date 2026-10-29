@@ -1,18 +1,24 @@
 /**
- * One turn of the AI chat about a document (docs/design.md §6): check what the browser sent, put
- * the message through the pre-filter, then run the model — and its tools — until it answers.
+ * The AI chat about a document (docs/design.md §6), as an agent for `@remix-kbn/helper-agent`'s
+ * controller: check the transcript the browser sent, put the reader's message through the
+ * pre-filter, then run the model — and the server's tools — until it answers or asks the browser
+ * to act on the page: read or set the selection, or open the posting dialog (`draft_opinion`).
  *
- * Nothing is stored. The browser sends the whole history every turn and appends what the turn
- * added, which the `done` event carries.
+ * Nothing is stored. The browser holds the transcript and sends all of it every turn; each
+ * assistant message carries the API's raw content blocks as its opaque `state`, which comes back
+ * here and is replayed as is, so thinking and the cached prefix survive the round trip.
  */
 
-import {
-  CHAT_MESSAGE_MAX_LENGTH,
-  type ChatEvent,
-  type ChatMessage,
-  type ChatRequest,
-} from "@kuboon/idobata-bot";
+import { CHAT_MESSAGE_MAX_LENGTH } from "@kuboon/idobata-bot";
 import type {
+  Agent,
+  AgentEvent,
+  AgentInput,
+  ChatMessage,
+  ToolResult,
+} from "@remix-kbn/helper-agent/controller";
+import type {
+  BetaContentBlock,
   BetaContentBlockParam,
   BetaMessageParam,
   BetaToolResultBlockParam,
@@ -24,14 +30,21 @@ import { type DocumentDetail, getDocument, isOpen } from "../documents.ts";
 import { filterMessage } from "./filter.ts";
 import type { ChatModel } from "./model.ts";
 import { firstMessage, systemBlocks, TOOLS } from "./prompt.ts";
-import { runTool } from "./tools.ts";
+import { type DraftInput, resolveDraft, runTool } from "./tools.ts";
 
 /** How many messages a conversation may hold: about 30 exchanges with their tool turns. */
 export const HISTORY_MAX_MESSAGES = 120;
-/** The history's size in characters of JSON — a guard on cost, well under the context window. */
-export const HISTORY_MAX_CHARS = 300_000;
+/** The request's size in bytes — a guard on cost, well under the context window. */
+export const HISTORY_MAX_BYTES = 600_000;
 /** Model calls in one turn: a search, a look at one opinion, a draft, and the answer. */
 export const TOOL_ROUNDS_MAX = 5;
+/** The browser runs this tool: it opens the posting dialog. */
+export const DRAFT_TOOL = "draft_opinion";
+/** Tools the browser runs on the page as they are: reading and setting the selection. */
+export const PAGE_TOOLS: ReadonlySet<string> = new Set([
+  "get_selection",
+  "select_segments",
+]);
 
 /** A request the chat refuses before streaming: the HTTP status and why. */
 export class ChatError extends Error {
@@ -115,85 +128,95 @@ function block(value: unknown): BetaContentBlockParam {
   }
 }
 
-/** A checked history, and the reader's new message (the last one) as plain text. */
-export interface ParsedChatRequest {
-  versionNumber: number;
-  segmentKeys: string[];
-  history: BetaMessageParam[];
-  message: string;
+/**
+ * An assistant message's API content, from its `state` when that reads back as blocks this
+ * server writes, and otherwise rebuilt from its text and calls.
+ */
+function assistantContent(
+  message: Extract<ChatMessage, { role: "assistant" }>,
+): BetaContentBlockParam[] {
+  if (message.state !== undefined) {
+    try {
+      const parsed = JSON.parse(message.state);
+      if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(block);
+    } catch (error) {
+      if (error instanceof ChatError) throw error;
+      // Not JSON: rebuild it below.
+    }
+  }
+  const content: BetaContentBlockParam[] = [];
+  if (message.content) content.push({ type: "text", text: message.content });
+  for (const call of message.toolCalls ?? []) {
+    content.push({
+      type: "tool_use",
+      id: call.id,
+      name: call.name,
+      input: isRecord(call.input) ? call.input : {},
+    });
+  }
+  return content;
 }
 
+/** The longest tool result the browser may send back: a sentence about the dialog. */
+const TOOL_RESULT_MAX_LENGTH = 2000;
+
 /**
- * Checks a `POST /api/docs/:docId/chat` body.
+ * The transcript as the Claude API's messages, after the document. Messages of the same role
+ * next to each other are merged — tool results are a `user` turn, and the server's and the
+ * browser's results for one assistant message arrive as two.
  *
- * @throws {ChatError} With status 400 when it is not a well-formed conversation ending in a new
- *   message from the reader
+ * @throws {ChatError} 400 when it is not a conversation this server could have had
  */
-export function parseChatRequest(body: unknown): ParsedChatRequest {
-  if (!isRecord(body)) return fail("invalid body");
-  const { versionNumber, segmentKeys, messages } = body as Partial<
-    Record<keyof ChatRequest, unknown>
-  >;
-  if (typeof versionNumber !== "number" || !Number.isInteger(versionNumber)) {
-    return fail("invalid versionNumber");
-  }
-  if (
-    !Array.isArray(segmentKeys) || segmentKeys.length > 200 ||
-    !segmentKeys.every((k) => typeof k === "string")
-  ) return fail("invalid segmentKeys");
-  if (!Array.isArray(messages) || messages.length === 0) {
-    return fail("invalid messages");
-  }
-  if (messages.length > HISTORY_MAX_MESSAGES) {
-    throw new ChatError(
-      413,
-      "この会話は長くなりすぎました。新しく始めてください。",
-    );
-  }
-  if (JSON.stringify(messages).length > HISTORY_MAX_CHARS) {
-    throw new ChatError(
-      413,
-      "この会話は長くなりすぎました。新しく始めてください。",
-    );
-  }
-
-  const history = messages.map((m): BetaMessageParam => {
-    if (!isRecord(m) || (m.role !== "user" && m.role !== "assistant")) {
-      return fail("invalid message");
-    }
-    const content = typeof m.content === "string"
-      ? m.content
-      : Array.isArray(m.content)
-      ? m.content.map(block)
-      : fail("invalid message");
-    return { role: m.role, content };
-  });
-
-  const last = history.at(-1)!;
-  const text = last.role !== "user"
-    ? fail("the last message must be the reader's")
-    : typeof last.content === "string"
-    ? last.content
-    : last.content.every((b) => b.type === "text")
-    ? last.content.map((b) => (b as { text: string }).text).join("")
-    : fail("the last message must be text");
-  if (!text.trim()) return fail("empty message");
-  if (text.length > CHAT_MESSAGE_MAX_LENGTH) return fail("message too long");
-
-  return {
-    versionNumber,
-    segmentKeys: segmentKeys as string[],
-    history,
-    message: text,
+export function toModelMessages(
+  messages: readonly ChatMessage[],
+): BetaMessageParam[] {
+  const out: BetaMessageParam[] = [];
+  const push = (
+    role: "user" | "assistant",
+    content: BetaContentBlockParam[],
+  ) => {
+    if (content.length === 0) return;
+    const last = out.at(-1);
+    if (last?.role === role && Array.isArray(last.content)) {
+      last.content = [...last.content, ...content];
+    } else out.push({ role, content });
   };
+  const called = new Set<string>();
+
+  for (const message of messages) {
+    if (!isRecord(message)) return fail("invalid message");
+    if (message.role === "user") {
+      if (typeof message.content !== "string") return fail("invalid message");
+      push("user", [{ type: "text", text: message.content }]);
+    } else if (message.role === "assistant") {
+      const content = assistantContent(message);
+      for (const b of content) if (b.type === "tool_use") called.add(b.id);
+      push("assistant", content);
+    } else if (message.role === "tool" && Array.isArray(message.results)) {
+      push(
+        "user",
+        message.results.map((r): BetaToolResultBlockParam => {
+          if (
+            !isRecord(r) || typeof r.id !== "string" || !called.has(r.id) ||
+            typeof r.content !== "string" ||
+            r.content.length > TOOL_RESULT_MAX_LENGTH
+          ) return fail("invalid tool result");
+          return {
+            type: "tool_result",
+            tool_use_id: r.id,
+            content: r.content,
+            ...(r.isError === true ? { is_error: true } : {}),
+          };
+        }),
+      );
+    } else return fail("invalid message");
+  }
+  return out;
 }
 
 /** The text a message shows, for the pre-filter's view of the conversation. */
-function plainText(message: BetaMessageParam): string {
-  if (typeof message.content === "string") return message.content;
-  return (message.content ?? [])
-    .flatMap((b) => (b.type === "text" ? [b.text] : []))
-    .join("");
+function plainText(message: ChatMessage): string {
+  return message.role === "tool" ? "" : message.content;
 }
 
 /** Counts a refused message: the day and the kind, never its text (docs/design.md §6). */
@@ -227,84 +250,208 @@ export async function chatDocument(
 }
 
 /**
- * Runs one turn, reporting it as {@link ChatEvent}s — every turn ends with exactly one `done`,
- * `rejected` or `error`.
+ * Pushes events from callbacks and reads them as an async iterable — the model streams text
+ * through a callback, and the agent yields.
  */
-export async function runChatTurn(
-  document: DocumentDetail,
-  request: ParsedChatRequest,
-  model: ChatModel,
-  emit: (event: ChatEvent) => void,
-): Promise<void> {
-  const selected = document.segments.filter((s) =>
-    request.segmentKeys.includes(s.key)
-  );
-  const verdict = await filterMessage({
-    title: document.title,
-    headings: document.segments
-      .filter((s) => s.kind === "heading")
-      .map((s) => s.text),
-    selected: selected.map((s) => s.text),
-    recentTurns: request.history.slice(-5, -1).map(plainText).filter(Boolean),
-    message: request.message,
-  });
-  if (!verdict.ok) {
-    await countRejection(document.id, verdict.kind);
-    emit({ type: "rejected", message: REJECTED_MESSAGE });
-    return;
-  }
+function channel<T>() {
+  const queue: T[] = [];
+  let wake: (() => void) | null = null;
+  let closed = false;
+  return {
+    push(value: T) {
+      queue.push(value);
+      wake?.();
+    },
+    close() {
+      closed = true;
+      wake?.();
+    },
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        if (queue.length > 0) yield queue.shift()!;
+        else if (closed) return;
+        else await new Promise<void>((resolve) => (wake = resolve));
+      }
+    },
+  };
+}
 
-  const prefix = [
-    firstMessage(document.title, document.segments, request.segmentKeys),
-    ...request.history,
-  ];
-  const added: BetaMessageParam[] = [];
+/**
+ * The agent for one conversation. Every turn ends with exactly one `done` or `error`.
+ *
+ * @param document The document's version — it makes the first message, which must come out the
+ *   same every turn
+ * @param model The Claude API, or a scripted stand-in
+ */
+export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
+  const context = { documentId: document.id, segments: document.segments };
 
-  try {
-    for (let round = 0; round < TOOL_ROUNDS_MAX; round++) {
-      const message = await model.run(
-        {
-          system: systemBlocks(),
-          messages: [...prefix, ...added],
-          tools: TOOLS,
-        },
-        (text) => emit({ type: "text", text }),
-      );
-      if (message.stop_reason === "refusal") {
-        emit({ type: "error", message: "この内容にはお答えできません。" });
+  return {
+    async *respond(input: AgentInput): AsyncGenerator<AgentEvent> {
+      let history: BetaMessageParam[];
+      try {
+        history = toModelMessages(input.messages);
+      } catch (error) {
+        if (!(error instanceof ChatError)) throw error;
+        yield { type: "error", message: error.message };
         return;
       }
-      added.push({
-        role: "assistant",
-        content: message.content as BetaContentBlockParam[],
-      });
-      if (message.stop_reason !== "tool_use") break;
 
-      const results: BetaToolResultBlockParam[] = [];
-      for (const b of message.content) {
-        if (b.type !== "tool_use") continue;
-        const result = await runTool(b.name, b.input, {
-          documentId: document.id,
-          segments: document.segments,
-          onDraft: (draft) => emit({ type: "draft", draft }),
+      const last = input.messages.at(-1)!;
+      if (last.role === "assistant") {
+        yield {
+          type: "error",
+          message: "the last message must be the reader's",
+        };
+        return;
+      }
+      if (last.role === "user") {
+        if (!last.content.trim()) {
+          yield { type: "error", message: "empty message" };
+          return;
+        }
+        if (last.content.length > CHAT_MESSAGE_MAX_LENGTH) {
+          yield { type: "error", message: "メッセージが長すぎます。" };
+          return;
+        }
+        const verdict = await filterMessage({
+          title: document.title,
+          headings: document.segments
+            .filter((s) => s.kind === "heading")
+            .map((s) => s.text),
+          selected: [],
+          recentTurns: input.messages.slice(-5, -1).map(plainText).filter(
+            Boolean,
+          ),
+          message: last.content,
         });
-        results.push({
-          type: "tool_result",
-          tool_use_id: b.id,
-          content: result.content,
-          ...(result.isError ? { is_error: true } : {}),
+        if (!verdict.ok) {
+          await countRejection(document.id, verdict.kind);
+          yield { type: "text", text: REJECTED_MESSAGE };
+          yield { type: "done", reason: "end" };
+          return;
+        }
+      }
+
+      const prefix = [
+        firstMessage(document.title, document.segments),
+        ...history,
+      ];
+      const added: BetaMessageParam[] = [];
+
+      for (let round = 0; round < TOOL_ROUNDS_MAX; round++) {
+        // A new round is a new assistant message. The session closes the previous one's tool
+        // results only on `text`, so a round that opens with a tool call and no words would be
+        // filed before them (`@kuboon/chat-element` 0.1.0); an empty delta closes them.
+        if (round > 0) yield { type: "text", text: "" };
+        const texts = channel<string>();
+        const running = model.run(
+          {
+            system: systemBlocks(),
+            messages: [...prefix, ...added],
+            tools: TOOLS,
+          },
+          (text) => texts.push(text),
+          input.signal,
+        ).finally(() => texts.close());
+        // Keep a failure for the await below rather than an unhandled rejection meanwhile.
+        running.catch(() => {});
+        for await (const text of texts) yield { type: "text", text };
+
+        let message;
+        try {
+          message = await running;
+        } catch (error) {
+          if (input.signal.aborted) return;
+          console.error("chat model failed", error);
+          yield {
+            type: "error",
+            message:
+              "AI の応答に失敗しました。しばらくしてからもう一度お試しください。",
+          };
+          return;
+        }
+
+        yield { type: "state", state: JSON.stringify(message.content) };
+        if (message.stop_reason === "refusal") {
+          yield { type: "done", reason: "refusal" };
+          return;
+        }
+        if (message.stop_reason === "max_tokens") {
+          yield { type: "done", reason: "max-tokens" };
+          return;
+        }
+        added.push({
+          role: "assistant",
+          content: message.content as BetaContentBlockParam[],
+        });
+        const calls = message.content.filter(
+          (b): b is Extract<BetaContentBlock, { type: "tool_use" }> =>
+            b.type === "tool_use",
+        );
+        if (message.stop_reason !== "tool_use" || calls.length === 0) {
+          yield { type: "done", reason: "end" };
+          return;
+        }
+
+        // The server's tools run here. The page's go to the browser: the selection, and a valid
+        // draft, for which it opens the posting dialog and answers once the reader has left it.
+        const results: ToolResult[] = [];
+        let forBrowser = false;
+        for (const call of calls) {
+          if (PAGE_TOOLS.has(call.name)) {
+            yield {
+              type: "tool-call",
+              call: { id: call.id, name: call.name, input: call.input },
+            };
+            forBrowser = true;
+            continue;
+          }
+          if (call.name === DRAFT_TOOL) {
+            const resolved = await resolveDraft(
+              call.input as DraftInput,
+              context,
+            );
+            if ("draft" in resolved) {
+              yield {
+                type: "tool-call",
+                call: { id: call.id, name: call.name, input: resolved.draft },
+              };
+              forBrowser = true;
+              continue;
+            }
+            yield {
+              type: "tool-call",
+              call: { id: call.id, name: call.name, input: call.input },
+            };
+            results.push({ id: call.id, ...resolved.error });
+            continue;
+          }
+          yield {
+            type: "tool-call",
+            call: { id: call.id, name: call.name, input: call.input },
+          };
+          results.push({
+            id: call.id,
+            ...(await runTool(call.name, call.input, context)),
+          });
+        }
+        for (const result of results) yield { type: "tool-result", result };
+        if (forBrowser) {
+          yield { type: "done", reason: "tools" };
+          return;
+        }
+        added.push({
+          role: "user",
+          content: results.map((r) => ({
+            type: "tool_result",
+            tool_use_id: r.id,
+            content: r.content,
+            ...(r.isError ? { is_error: true } : {}),
+          })),
         });
       }
-      added.push({ role: "user", content: results });
-    }
-  } catch (error) {
-    console.error("chat model failed", error);
-    emit({
-      type: "error",
-      message:
-        "AI の応答に失敗しました。しばらくしてからもう一度お試しください。",
-    });
-    return;
-  }
-  emit({ type: "done", messages: added as ChatMessage[] });
+      yield { type: "error", message: "AI の応答が長くなりすぎました。" };
+    },
+  };
 }
