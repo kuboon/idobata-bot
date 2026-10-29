@@ -5,8 +5,8 @@
  * - Segments selected: the opinions about any of them.
  *
  * Under them, 「AI と対話する」 shows the chat in the corner (`assistant.ts`), which reads the
- * selection, and 「自分で書く」 opens the posting dialog (`post_dialog.tsx`) with the selection as its targets.
- * The AI opens the same dialog, with its draft filled in.
+ * selection. Opinions are only written through the AI: it weighs them against the ones already
+ * there and opens the posting dialog (`post_dialog.tsx`) with its draft filled in.
  */
 
 import { css, type Handle, on } from "@remix-run/component";
@@ -28,7 +28,6 @@ import {
   primaryStyle,
 } from "../theme.ts";
 import { color } from "../tokens.ts";
-import type { ComposeStore } from "./compose.ts";
 import type { OpinionStore } from "./store.ts";
 
 export interface OpinionPanelProps {
@@ -39,8 +38,6 @@ export interface OpinionPanelProps {
   segmentLabels: Map<string, string>;
   /** Whether the document still takes opinions. */
   open: boolean;
-  /** The posting dialog. */
-  compose: ComposeStore;
   /** Starts (or shows) the chat about the selection. */
   onTalk(): void;
 }
@@ -81,19 +78,6 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
   const fail = (e: unknown) => {
     message = e instanceof OpinionApiError ? e.message : String(e);
     handle.update();
-  };
-
-  /** The posting dialog, aimed at the selection — or the document, with nothing selected. */
-  const write = () => {
-    const { selected, compose } = handle.props;
-    const targets: Target[] = selected.length === 0
-      ? [{ kind: "document", stance: "concern" }]
-      : selected.map((s) => ({
-        kind: "segment",
-        segmentKey: s.key,
-        stance: "concern",
-      }));
-    void compose.open({ kind: "opinion", draft: { targets } });
   };
 
   const card = (opinion: Opinion) => {
@@ -138,25 +122,6 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
                   {opinion.supportedByMe ? "賛同済み" : "賛同する"}
                 </button>
               )}
-              <button
-                type="button"
-                mix={[
-                  actionStyle,
-                  on("click", () =>
-                    void handle.props.compose.open({
-                      kind: "opinion",
-                      draft: {
-                        targets: [{
-                          kind: "opinion",
-                          opinionId: opinion.id,
-                          stance: "support",
-                        }],
-                      },
-                    })),
-                ]}
-              >
-                この意見に応答
-              </button>
               {opinion.mine && !opinion.frozen
                 ? (
                   <button
@@ -234,16 +199,10 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
               >
                 AI と対話する
               </button>
-              <button
-                type="button"
-                mix={[actionStyle, on("click", write)]}
-              >
-                自分で書く
-              </button>
               <span mix={metaStyle}>
                 {keys.size === 0
-                  ? "AI は話の中で、関係する段落を選んで示します。"
-                  : "AI は選んだ段落を見て、すでに出ている意見との関係を確かめながら手伝います。"}
+                  ? "意見は AI と話しながらまとめます。AI は話の中で、関係する段落を選んで示します。"
+                  : "意見は AI と話しながらまとめます。AI は選んだ段落の意見との関係を確かめて、下書きを作ります。"}
               </span>
             </div>
           )

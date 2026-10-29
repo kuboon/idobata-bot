@@ -200,8 +200,7 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
             </p>
           )
           : null}
-        <fieldset mix={targetsFieldStyle}>
-          <legend>何に対する意見か</legend>
+        <div mix={targetsStyle} aria-label="対象と立場">
           {targets.map((t) => (
             <div key={targetKey(t)} mix={targetRowStyle}>
               <span>
@@ -244,7 +243,7 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
                 : null}
             </div>
           ))}
-        </fieldset>
+        </div>
         {FIELDS.map(([name, label, multiline]) => (
           <label key={name} mix={labelStyle}>
             {label}
@@ -355,13 +354,7 @@ const buttonsStyle = css({
   gap: "0.5rem",
 });
 
-const targetsFieldStyle = css({
-  display: "grid",
-  gap: "0.4rem",
-  border: `1px solid ${color.border}`,
-  borderRadius: radius.md,
-  padding: "0.5rem 0.75rem",
-});
+const targetsStyle = css({ display: "grid", gap: "0.4rem" });
 
 const targetRowStyle = css({
   display: "flex",

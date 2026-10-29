@@ -5,8 +5,9 @@
  * document's ID comes from the URL and everything else from `GET /api/docs/:docId`. The Markdown is
  * rendered with `@kuboon/md` in one piece and cut back into the server's segments
  * (`lib/document.ts`); clicking a segment selects it. A segment with opinions about it is
- * underlined and shows how many, and the opinion panel (`opinions/panel.tsx`) opens right after the
- * last selected segment — or, with nothing selected, after the document — with those opinions and
+ * underlined and shows how many, and the opinion panel (`opinions/panel.tsx`) floats above the
+ * first selected segment, without moving the document, with a × to close it — or, with nothing
+ * selected, sits after the document — with those opinions and
  * the buttons to talk with the AI or write one. The AI chat (`opinions/assistant.ts`) is one per
  * page, opened from the button always in the corner, and reads and sets the selection. Both end in
  * the posting dialog (`opinions/post_dialog.tsx`), which there is one of for the page.
@@ -104,11 +105,12 @@ export const DocumentView = clientEntry(
         selected.clear();
         for (const { segment } of picked) selected.add(segment.key);
         handle.update();
-        setTimeout(() =>
+        setTimeout(() => {
+          placePopover();
           document
             .querySelector(`[data-segment="${picked[0].segment.key}"]`)
-            ?.scrollIntoView({ behavior: "smooth", block: "center" })
-        );
+            ?.scrollIntoView({ behavior: "smooth", block: "center" });
+        });
         return picked.map(({ index, segment }) => ({
           index,
           text: segment.text,
@@ -140,6 +142,9 @@ export const DocumentView = clientEntry(
      * the selection. Clicking the only selected paragraph again clears the selection.
      */
     const select = (key: string, event: MouseEvent) => {
+      // The panel floats inside the paragraph; its clicks are its own. (Its × unmounts it while
+      // the click is still bubbling, so a listener on the panel cannot stop it reaching here.)
+      if ((event.target as Element).closest?.("[data-popover]")) return;
       if (event.ctrlKey || event.metaKey || event.shiftKey) {
         if (selected.has(key)) selected.delete(key);
         else selected.add(key);
@@ -149,6 +154,32 @@ export const DocumentView = clientEntry(
         selected.clear();
         selected.add(key);
       }
+      handle.update();
+      setTimeout(() =>
+        placePopover()?.scrollIntoView({
+          behavior: "smooth",
+          block: "nearest",
+        })
+      );
+    };
+
+    /**
+     * The panel floats above its paragraph, unless that would put it above the top of the page —
+     * then below. Returns it, for scrolling into view.
+     */
+    const placePopover = () => {
+      const popover = document.querySelector<HTMLElement>("[data-popover]");
+      if (!popover) return null;
+      delete popover.dataset.below;
+      if (popover.getBoundingClientRect().top + globalThis.scrollY < 0) {
+        popover.dataset.below = "";
+      }
+      return popover;
+    };
+
+    /** Closes the panel by clearing the selection. */
+    const closePanel = () => {
+      selected.clear();
       handle.update();
     };
 
@@ -194,9 +225,9 @@ export const DocumentView = clientEntry(
       }
       if (!detail) return <p mix={metaStyle}>読み込んでいます…</p>;
 
-      // The selection in document order: the panel goes after the last selected segment.
+      // The selection in document order: the panel floats above the first selected segment.
       const selection = detail.segments.filter((s) => selected.has(s.key));
-      const lastSelected = selection.at(-1)?.key ?? null;
+      const firstSelected = selection[0]?.key ?? null;
       const panel = store
         ? (
           <OpinionPanel
@@ -207,7 +238,6 @@ export const DocumentView = clientEntry(
             }))}
             segmentLabels={segmentLabels}
             open={detail.open}
-            compose={compose}
             onTalk={talk}
           />
         )
@@ -229,30 +259,24 @@ export const DocumentView = clientEntry(
           </header>
 
           <aside mix={selectionStyle}>
-            {selected.size === 0
-              ? (
-                <span>
-                  段落をクリックすると選択できます（Ctrl / ⌘ / Shift
-                  を押しながらで複数）。
-                </span>
-              )
-              : (
-                <>
-                  <span>{selected.size} 件の段落を選択中</span>
-                  <button
-                    type="button"
-                    mix={[
-                      actionStyle,
-                      on("click", () => {
-                        selected.clear();
-                        handle.update();
-                      }),
-                    ]}
-                  >
-                    選択を解除
-                  </button>
-                </>
-              )}
+            <span mix={selectionTextStyle}>
+              {selected.size === 0
+                ? "段落をタップすると選択できます（Ctrl / ⌘ / Shift で複数）"
+                : `${selected.size} 件の段落を選択中`}
+            </span>
+            <button
+              type="button"
+              mix={[
+                actionStyle,
+                on("click", () => {
+                  selected.clear();
+                  handle.update();
+                }),
+              ]}
+              style={selected.size === 0 ? "visibility: hidden" : undefined}
+            >
+              選択を解除
+            </button>
           </aside>
 
           <article mix={proseStyle}>
@@ -267,22 +291,38 @@ export const DocumentView = clientEntry(
                   data-segment={key}
                   data-selected={selected.has(key) ? "" : undefined}
                   data-opinions={count ? "" : undefined}
-                  title={count ? `意見 ${count} 件。クリックで表示` : undefined}
                   mix={[
                     segmentStyle,
                     on("click", (event) => select(key, event)),
                   ]}
                 >
+                  {key === firstSelected && panel
+                    ? (
+                      <div
+                        data-popover
+                        role="dialog"
+                        aria-label="選んだ段落への意見"
+                        mix={popoverStyle}
+                      >
+                        <button
+                          type="button"
+                          aria-label="閉じる"
+                          mix={[closeStyle, on("click", closePanel)]}
+                        >
+                          ×
+                        </button>
+                        {panel}
+                      </div>
+                    )
+                    : null}
                   {count ? <span mix={countStyle}>意見 {count}</span> : null}
                   {rendered}
                 </div>
               );
-              return key === lastSelected && panel
-                ? [block, <div key="opinion-panel">{panel}</div>]
-                : [block];
+              return [block];
             })}
           </article>
-          {lastSelected === null ? panel : null}
+          {firstSelected === null ? panel : null}
           {detail.open && !assistant?.open
             ? (
               <button
@@ -321,7 +361,7 @@ const selectionStyle = css({
   display: "flex",
   alignItems: "center",
   gap: "0.75rem",
-  flexWrap: "wrap",
+  flexWrap: "nowrap",
   marginBottom: "1rem",
   padding: "0.5rem 0.75rem",
   border: `1px solid ${color.border}`,
@@ -349,6 +389,15 @@ const launcherStyle = css({
   cursor: "pointer",
 });
 
+/** One line whatever it says, and the button keeps its place hidden: selecting never moves the document. */
+const selectionTextStyle = css({
+  flex: 1,
+  minWidth: 0,
+  overflow: "hidden",
+  whiteSpace: "nowrap",
+  textOverflow: "ellipsis",
+});
+
 const countStyle = css({
   float: "right",
   marginInlineStart: "0.5rem",
@@ -362,7 +411,45 @@ const countStyle = css({
   fontWeight: 400,
 });
 
+/**
+ * The panel for a selection: floating above the paragraph, so the document does not move when a
+ * paragraph is tapped. Out of the flow, it does not inherit the paragraph's underline either.
+ */
+const popoverStyle = css({
+  position: "absolute",
+  insetInline: 0,
+  bottom: "calc(100% + 0.5rem)",
+  zIndex: 5,
+  maxHeight: "min(28rem, 50vh)",
+  overflowY: "auto",
+  borderRadius: radius.lg,
+  boxShadow: "0 0.75rem 2rem rgb(0 0 0 / 0.25)",
+  cursor: "auto",
+  "& > section": { margin: 0, paddingTop: "1rem" },
+  "&[data-below]": { bottom: "auto", top: "calc(100% + 0.5rem)" },
+});
+
+const closeStyle = css({
+  position: "sticky",
+  top: "0.5rem",
+  float: "right",
+  marginTop: "0.5rem",
+  marginInlineEnd: "0.5rem",
+  zIndex: 1,
+  width: "2rem",
+  height: "2rem",
+  border: `1px solid ${color.border}`,
+  borderRadius: "999px",
+  background: color.bg,
+  color: color.fg,
+  font: "inherit",
+  fontSize: "1.1rem",
+  lineHeight: 1,
+  cursor: "pointer",
+});
+
 const segmentStyle = css({
+  position: "relative",
   marginInline: "-0.75rem",
   paddingInline: "0.75rem",
   borderInlineStart: "3px solid transparent",
