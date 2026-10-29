@@ -34,6 +34,9 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CI: "false"
+          # A run by hand is one you are watching: log cf's API requests, so a
+          # refusal names its endpoint (the token is sanitized out).
+          DEBUG: "1"
         run: |
           # The answer waits in the terminal until cf asks; the fifo keeps the
           # terminal's input open until the deploy is done.
