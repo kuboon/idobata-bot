@@ -25,3 +25,7 @@ jobs:
       - run: deno task cf deploy --prebuilt
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          # Logs each API request, so a 403 names the endpoint (and with it
+          # the token permission) that was refused. The token itself is
+          # sanitized out of the log.
+          WRANGLER_LOG: debug
