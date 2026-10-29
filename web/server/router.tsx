@@ -194,7 +194,7 @@ router.get(
  *
  * Pages are reached by following links from `/`. The exceptions are things nothing links to in
  * the static HTML: `/my` (the nav's link to it is drawn by the sign-in island, only once signed
- * in), the document page's shell and its owner's page's (every `/d/:docId` and `/d/:docId/admin`
+ * in), `/new` (linked only from My page's documents card, an island), the document page's shell and its owner's page's (every `/d/:docId` and `/d/:docId/admin`
  * is served from them, and the links to documents
  * are drawn by the list island), the social cards (an `og:image` is an absolute URL meant for someone else's server) and the
  * service worker (the push manager registers it by URL from script). `/api/*` is deliberately
@@ -203,6 +203,7 @@ router.get(
 export const entryPoints: readonly string[] = [
   "/",
   routes.my.href(),
+  routes.newDocument.href(),
   routes.document.href({ docId: DOCUMENT_SHELL_ID }),
   routes.documentAdmin.href({ docId: DOCUMENT_SHELL_ID }),
   ...ogPaths(),
