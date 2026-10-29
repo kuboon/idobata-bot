@@ -9,6 +9,9 @@
  * `deno task build:worker` bundles this file into `web/worker-dist/worker.js`.
  */
 
+// First: a module below needs it while it loads — see the file.
+import { removeDomShim } from "./dom_shim.ts";
+
 import { cop } from "@remix-run/cop-middleware";
 import { createController, createRouter } from "@remix-run/fetch-router";
 
@@ -29,6 +32,9 @@ import { jwksAction } from "./controllers/well_known.ts";
 // of the API controllers use it, and this router has no render middleware, so the controllers are
 // handed over as `never` rather than pulling the page renderer (and `Deno.bundle`) in.
 // Rejects unsafe cross-origin browser requests (`POST /api/notify`).
+// Every import above has run by now; the shim has done its job.
+removeDomShim();
+
 const router = createRouter({ middleware: [cop()] });
 
 router.get(routes.jwks, jwksAction.handler as never);

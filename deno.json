@@ -69,6 +69,7 @@
     "jose": "jsr:@panva/jose@^6.2.3",
     "mdast": "npm:@types/mdast@^4.0.4",
     "puppeteer-core": "npm:puppeteer-core@^23.11.1",
+    "character-entities": "npm:character-entities@^2.0.2",
     "remark-gfm": "npm:remark-gfm@^4.0.1",
     "remark-parse": "npm:remark-parse@^11.0.0",
     "unified": "npm:unified@^11.0.5"
