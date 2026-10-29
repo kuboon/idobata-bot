@@ -148,8 +148,13 @@ Deno で catch 不能なエラーになる)。env は top-level await
 - `RP_SIGNING_KEY_JWK` — 任意。ES256 秘密鍵 (JWK JSON)。未設定ならプロセス毎に
   生成
   (開発用)。本番では固定鍵を設定し、再起動で鍵がローテートしないようにする。
+  本番の鍵は `.github/workflows/cloudflare.yml` が初回デプロイで CI 上で生成して
+  Worker secret
+  に置き、以後のデプロイでは触らない（`web/server/deploy_secrets.ts`）。
+  鍵を作り直したいときは Worker の secret を消してからデプロイする。
 - `ANTHROPIC_API_KEY` — チャットの Claude API キー（Worker secret）。未設定なら
-  チャットは `503`。
+  チャットは `503`。リポジトリの Actions secret にあれば、デプロイのたびに
+  Worker へ渡す。
 - `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
   （`deno task dev` は `data/app.db`）。未設定ならメモリ。
 - `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`
