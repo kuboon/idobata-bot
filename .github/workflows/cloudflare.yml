@@ -25,9 +25,3 @@ jobs:
       - run: deno task cf deploy --prebuilt
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          # Logs the API requests (cf's own client reads DEBUG; wrangler's
-          # code, which cf delegates parts to, reads WRANGLER_LOG), so a 403
-          # names the endpoint, and with it the token permission, that was
-          # refused. Both sanitize the token out of the log.
-          DEBUG: "1"
-          WRANGLER_LOG: debug
