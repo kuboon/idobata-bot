@@ -23,7 +23,7 @@ import { sessionStore } from "../session.ts";
 import { actionStyle, primaryStyle } from "../theme.ts";
 
 export interface NavAuthProps {
-  /** App-relative href of the my-page, e.g. `/my` (carries the deploy prefix). */
+  /** App-relative href of the my-page, e.g. `/my`. */
   myHref: string;
   [key: string]: SerializableValue;
 }

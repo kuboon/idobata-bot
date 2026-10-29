@@ -1,0 +1,44 @@
+name: rp-signing-key
+
+# Sets the Worker's RP_SIGNING_KEY_JWK: an ES256 key generated here, so it is
+# never stored anywhere but the Worker. Run by hand (Actions → rp-signing-key →
+# Run workflow). An existing key is kept unless `overwrite` is on — a new key
+# changes the JWKS the IdP checks our client assertions against.
+
+on:
+  workflow_dispatch:
+    inputs:
+      overwrite:
+        description: Replace the key if the Worker already has one
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check for an existing key
+        if: ${{ !inputs.overwrite }}
+        run: |
+          existing=$(deno task cf workers secrets list --worker idobata-bot)
+          if grep -q RP_SIGNING_KEY_JWK <<<"$existing"; then
+            echo "::error::RP_SIGNING_KEY_JWK is already set. Run again with overwrite to replace it."
+            exit 1
+          fi
+      - name: Generate and set the key
+        run: |
+          jwk=$(deno run web/server/generate_signing_key.ts)
+          echo "::add-mask::$jwk"
+          deno task cf workers secrets update RP_SIGNING_KEY_JWK \
+            --worker idobata-bot --type secret_text --text "$jwk" > /dev/null
+          echo "RP_SIGNING_KEY_JWK set."

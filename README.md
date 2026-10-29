@@ -1,16 +1,12 @@
-# deno-remix-tmpl
+# idobata-bot
 
-Remix v3 + Deno のリファレンス実装 (DPoP セッションマネージャー付き)。
+文書への意見募集サービス。文書を読み込んだ AI と対話しながら意見を聞き出し、
+定型化して投稿する。似た意見がすでにあれば対話の中で示し、賛同したり、その意見
+への疑問・補足として書いたりできる。
 
-## デモ
+- 本番: <https://idobata-bot.kuboon.workers.dev/>
+- 設計: [docs/design.md](./docs/design.md)
+- 開発のルール: [CLAUDE.md](./CLAUDE.md)
 
-- GitHub Pages (静的版): <https://kuboon.github.io/deno-remix-tmpl/>
-- Cloudflare Workers (サーバー版、`/api/*` あり):
-  <https://deno-remix-tmpl.kuboon.workers.dev/>
-
-このリポジトリは GitHub テンプレート。新しいアプリを作るときの手順は
-[TEMPLATE.md](./TEMPLATE.md)（static / server
-モードの選択、改変、不要機能の削除）、 開発のルールは [CLAUDE.md](./CLAUDE.md)
-を参照。
-
-ref: https://github.com/remix-run/remix
+Remix v3 + Deno で書き、Cloudflare Workers にデプロイする。
+[kuboon/deno-remix-tmpl](https://github.com/kuboon/deno-remix-tmpl) から作った。

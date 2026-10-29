@@ -7,21 +7,11 @@ Deno.test("GET / returns the shell with nav links and the runtime script", async
   assertStringIncludes(res.headers.get("content-type") ?? "", "text/html");
   const html = await res.text();
   assertStringIncludes(html, "<!DOCTYPE html>");
-  assertStringIncludes(html, "Remix3 on Deno Template");
-  assertStringIncludes(html, "kuboon.github.io/deno-remix-tmpl");
-  assertStringIncludes(html, 'href="/hydration"');
+  assertStringIncludes(html, "idobata-bot");
+  assertStringIncludes(html, "<main");
   assertStringIncludes(html, '<script type="module" src="/assets/hydration');
   // Soft navigation is the runtime's default now; no frame target attributes.
   assert(!html.includes("rmx-target"));
-});
-
-Deno.test("GET /hydration includes the Counter clientEntry marker", async () => {
-  const res = await router.fetch(new Request("http://x/hydration"));
-  assertEquals(res.status, 200);
-  const html = await res.text();
-  assertStringIncludes(html, "/assets/islands/counter");
-  assertStringIncludes(html, "Counter");
-  assertStringIncludes(html, 'aria-label="increment"');
 });
 
 Deno.test("GET /my embeds idp-origin meta", async () => {
@@ -40,24 +30,6 @@ Deno.test("GET /sw.js serves the worker with a root scope", async () => {
   assertStringIncludes(await res.text(), "addEventListener");
 });
 
-Deno.test("GET /api/protected without DPoP proof is rejected", async () => {
-  const res = await router.fetch(new Request("http://x/api/protected"));
-  assert(
-    res.status === 401 || res.status === 400,
-    `expected 400 or 401, got ${res.status}`,
-  );
-  await res.body?.cancel();
-});
-
-Deno.test("GET /api/turso reports unconfigured without Turso env", async () => {
-  // No TURSO_DATABASE_URL in the test environment — the sample degrades to a
-  // 503 instead of attempting a connection.
-  const res = await router.fetch(new Request("http://x/api/turso"));
-  assertEquals(res.status, 503);
-  const body = await res.json() as { configured?: boolean };
-  assertEquals(body.configured, false);
-});
-
 Deno.test("GET /.well-known/jwks.json publishes the RP key", async () => {
   const res = await router.fetch(
     new Request("http://x/.well-known/jwks.json"),
@@ -67,33 +39,27 @@ Deno.test("GET /.well-known/jwks.json publishes the RP key", async () => {
   assertEquals(body.keys[0].kty, "EC");
 });
 
-for (
-  const [path, needle] of [
-    ["/blog", "Blog"],
-    ["/blog/hello-remix-ssg", "Hello, remix-ssg"],
-    ["/showcase", "showcase"],
-    ["/spa/1", "SPA"],
-  ] as const
-) {
-  Deno.test(`GET ${path} renders inside the shell`, async () => {
-    const res = await router.fetch(new Request(`http://x${path}`));
-    assertEquals(res.status, 200);
-    const html = await res.text();
-    assertStringIncludes(html, "<main");
-    assertStringIncludes(html, needle);
-  });
-}
-
-Deno.test("GET /fullscreen is a bare page with no shell", async () => {
-  const res = await router.fetch(new Request("http://x/fullscreen"));
+Deno.test("GET /og/index.png draws the home page's card", async () => {
+  const res = await router.fetch(new Request("http://x/og/index.png"));
   assertEquals(res.status, 200);
-  const html = await res.text();
-  assert(!html.includes("<main"));
-  assertStringIncludes(html, "FullscreenGame");
+  assertEquals(res.headers.get("content-type"), "image/png");
+  await res.body?.cancel();
 });
 
-Deno.test("GET /spa/unknown is a 404", async () => {
-  const res = await router.fetch(new Request("http://x/spa/nope"));
-  assertEquals(res.status, 404);
-  await res.body?.cancel();
+Deno.test("GET /new renders the registration page", async () => {
+  const res = await router.fetch(new Request("http://x/new"));
+  assertEquals(res.status, 200);
+  const html = await res.text();
+  assertStringIncludes(html, "文書を登録");
+  assertStringIncludes(html, "new_document_form");
+});
+
+Deno.test("GET /d/:docId renders the document page for any ID", async () => {
+  for (const id of ["_shell", "abc"]) {
+    const res = await router.fetch(new Request(`http://x/d/${id}`));
+    assertEquals(res.status, 200);
+    const html = await res.text();
+    assertStringIncludes(html, "document_view");
+    assertStringIncludes(html, "<title>文書 — idobata-bot</title>");
+  }
 });

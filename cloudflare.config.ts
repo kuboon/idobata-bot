@@ -12,25 +12,33 @@ export default defineConfig({
   // Not a secret: it is only an identifier, and the API token is what authorizes.
   accountId: "ac92f36f0a2d84353b137574157f7480",
   worker: {
-    name: "deno-remix-tmpl",
+    name: "idobata-bot",
     compatibilityDate: "2026-10-01",
     entrypoint: "./web/worker-dist/worker.js",
     assets: {
       htmlHandling: "auto-trailing-slash",
       notFoundHandling: "none",
       // Only these reach the Worker; every other path is a static file.
-      runWorkerFirst: ["/api/*", "/.well-known/jwks.json"],
+      // `/d/*` is the document page: the Worker serves the static shell with the document's
+      // title written in (`web/server/document_shell.ts`).
+      runWorkerFirst: ["/api/*", "/.well-known/jwks.json", "/d/*"],
     },
     env: {
       IDP_ORIGIN: bindings.text("https://id.kbn.one"),
-      RP_ORIGIN: bindings.text("https://deno-remix-tmpl.kuboon.workers.dev"),
-      // Secrets, set once with `deno task cf workers secrets update <NAME> --worker deno-remix-tmpl
-      // --type secret_text --text ...`; declared here so a deploy keeps them.
+      RP_ORIGIN: bindings.text("https://idobata-bot.kuboon.workers.dev"),
+      // Secrets, declared here so a deploy keeps them, and set on the Worker only:
+      // RP_SIGNING_KEY_JWK by the manual workflow `.github/workflows/rp-signing-key.yml`,
+      // ANTHROPIC_API_KEY by hand with `deno task cf workers secrets update ANTHROPIC_API_KEY
+      // --worker idobata-bot --type secret_text --text ...`.
       RP_SIGNING_KEY_JWK: bindings.secret(),
-      TURSO_DATABASE_URL: bindings.text(
-        "libsql://deno-remix-reference-kuboon.aws-ap-northeast-1.turso.io",
-      ),
-      TURSO_AUTH_TOKEN: bindings.secret(),
+      // The Claude API key for the chat (`web/server/lib/chat/`).
+      ANTHROPIC_API_KEY: bindings.secret(),
+      // Workers AI, for the chat's pre-filter (Clef).
+      AI: bindings.ai(),
+      // Migrated ahead of a deploy with `deno task db migrate --remote` (needs
+      // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission).
+      DB: bindings.d1({ name: "idobata-bot" }),
+      ASSETS: bindings.assets(),
     },
   },
 });

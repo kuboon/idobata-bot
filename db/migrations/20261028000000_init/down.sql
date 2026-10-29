@@ -1,0 +1,11 @@
+DROP TABLE IF EXISTS filter_stats;
+DROP TABLE IF EXISTS moderation_logs;
+DROP TABLE IF EXISTS adoptions;
+DROP TABLE IF EXISTS supports;
+DROP TABLE IF EXISTS opinion_targets;
+DROP TABLE IF EXISTS opinions;
+DROP TABLE IF EXISTS changes;
+DROP TABLE IF EXISTS segments;
+DROP TABLE IF EXISTS versions;
+DROP TABLE IF EXISTS documents;
+DROP TABLE IF EXISTS users;

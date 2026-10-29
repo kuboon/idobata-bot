@@ -1,64 +1,25 @@
-# deno-remix-tmpl
+# idobata-bot
 
-Remix v3 + Deno のテンプレート。DPoP (RFC 9449) セッションマネージャーと
-id.kbn.one 連携の push 通知を含む。
+文書への意見募集サービス。文書を読み込んだ AI（Claude）と対話しながらユーザーの
+意見を聞き出し、定型化して投稿する。Remix v3 + Deno で書き、Cloudflare Workers
+にデプロイする。認証は id.kbn.one。
 
-## このリポジトリは何か（最初に判定する）
+設計は [`docs/design.md`](./docs/design.md)。機能を足すときは先にそこを読み、
+決めたことが変わったら設計書も直す。
 
-このリポジトリは **GitHub
-テンプレート**で、ここから新しいアプリを作る。ファイルは全部コピーされるので、
-同じ `CLAUDE.md` が **テンプレ本体**と**派生アプリ**の両方にある。次で区別する。
-
-1. `git remote get-url origin` が `kuboon/deno-remix-tmpl` →
-   **テンプレ本体**。「テンプレ本体を保守するとき」を読む。
-2. それ以外 → **派生アプリ**。`TEMPLATE.md` が残っていれば、init 前なので **まず
-   `TEMPLATE.md` の ステップ 0 とステージ 1 を済ませる**。`TEMPLATE.md`
-   が無ければ init 済みで、普通のアプリとして扱う
-   （テンプレ本体の事情は持ち込まない）。
-
-判定できない（remote が無い等）ときは、推測せずユーザーに聞く。
-
-## テンプレ本体を保守するとき
-
-（派生アプリでは、init の最後にこの節を削除する。）
-
-- 方針: **機能は全部このテンプレに置く**。別の starter に機能を分散させない（旧
-  SSG starter
-  の機能もここに統合済み）。派生アプリが要らない機能を消せるよう、`TEMPLATE.md`
-  の機能表と `[feature:名前]` タグを **機能を足す/消す/動かすたびに更新する**。
-- 機能を足したら: 配線行（`routes.ts` / `router.tsx` / `layout.tsx` /
-  `assets.ts`）に `[feature:名前]` を付け、 `TEMPLATE.md`
-  の表に行（消すファイル・配線・依存）を足す。
-- 二つのモードが両方動くことを保つ: static（SSG → Pages）と server（Deno
-  Deploy）。 デモは両方の URL を `README.md`
-  とトップページに載せている。`/api/*` を static に出さない
-  （どこからもリンクしない、`entryPoints` に入れない）。
-- 変更前後に `deno task check && deno task test && deno task build` と
-  `deno task test:browser` を通す。 `TEMPLATE.md`
-  の削除リストが本当に通るか、確かめるには scratch の `git worktree` で static
-  用と server 用の リストをそれぞれ実際に消して `check`/`build`(`test`) を回す。
-- `@remix-run/render-middleware` / `@remix-run/spa` は 1.0.0 で固定を外した
-  （`TEMPLATE.md` 参照）。依存を上げたら `/blog` の本文を確認する。
+[kuboon/deno-remix-tmpl](https://github.com/kuboon/deno-remix-tmpl)
+から作った（server モード）。テンプレの init は済んでいて、テンプレ本体の事情
+（static モード、GitHub Pages、`base`、デモ機能）はここには無い。
 
 ## 構造
 
-- `KvRepo` 抽象は [jsr:@kuboon/kv](https://jsr.io/@kuboon/kv) を利用 (memory /
-  Deno KV / Turso libSQL)。
-- `packages/session-storage-kv/` — `@remix-run/session` の `SessionStorage` を
-  `KvRepo` で実装。
-- `packages/remix-dpop-session-middleware/` — DPoP セッション middleware (Remix
-  v3 fetch-router 用)。`context.get(DpopSession)` でアクセスでき、
-  `@remix-run/session` の `Session` と共存可能。DPoP proof 生成・検証は
-  [jsr:@kuboon/dpop](https://jsr.io/@kuboon/dpop) を利用。
-- `web/` — Remix v3 リファレンス Web アプリ (Cloudflare Workers へ server
-  として、GitHub Pages
-  へ静的サイトとして同時にデプロイ。派生アプリはどちらか一方を選ぶ —
-  `TEMPLATE.md`)
+- `web/` — Web アプリ
   - `web/client/` — ブラウザに渡るもの全て (routes / pages / islands / layout /
     static)。`deno.ns` 無しで型チェックされる
   - `web/server/` — router・asset bundler・API・config・og 画像
-  - `/my` — id.kbn.one を IdP として使うサインインフロー +
-    プッシュ通知のサンプル
+  - `web/tests/` — ブラウザ smoke テスト（opt-in）
+- `/my` — id.kbn.one を IdP として使うサインイン + プッシュ通知
+- `docs/design.md` — 設計書
 
 ## プッシュ通知 (id.kbn.one 連携)
 
@@ -67,9 +28,8 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 
 - ブラウザ側 (`web/client/lib/push/`, `web/client/islands/push_card.tsx`,
   `web/client/sw.js`):
-  - `${base}/sw.js` をこのオリジンに登録し push を受信 (`router.tsx`
-    の専用ルートが配信。scope を `${base}/` にするため `static/`
-    配下には置かない)。
+  - `/sw.js` をこのオリジンに登録し push を受信 (`router.tsx`
+    の専用ルートが配信。scope を `/` にするため `static/` 配下には置かない)。
   - 購読の取得/登録/改名/削除/テストは DPoP-bound fetch で IdP の
     `${IDP_ORIGIN}/push/*` を直接叩く (cross-origin)。VAPID 公開鍵も IdP
     のもの。
@@ -85,6 +45,90 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 [RFC 7521]: https://www.rfc-editor.org/rfc/rfc7521
 [RFC 7523]: https://www.rfc-editor.org/rfc/rfc7523
 
+## 文書と段落
+
+- 文書は Markdown で登録し、版ごとに段落（セグメント）へ分けて保存する
+  （`web/server/lib/segments.ts`）。分割は `@kuboon/md` と同じ remark-parse +
+  remark-gfm
+  のトップレベルのノードで、段落の本文は原文をそのまま切り出したもの。
+- 表示は `@kuboon/md` で文書全体を一度に描画し、トップレベルの要素を原文中の
+  位置で段落に対応づける（`web/client/lib/document.ts`）。段落ごとに別々に
+  描画しないのは、参照リンクや脚注を解決するため。
+
+## 意見（3 つの部品）
+
+設計書 §2「3 つの部品」: ①文書の保存・表示（このサイト）、②意見・賛同の投稿
+（JSR `@kuboon/idobata-bot` = `packages/idobata-bot/`）、③意見の管理（API）。
+
+- ③の API（`/api/docs/:docId/opinions`、`/api/opinions/*`、`/api/me/opinions`）
+  は `web/server/lib/opinions.ts` と `controllers/api/opinions.ts`。文書は
+  ID・版・ 段落キーとしか知らない。①の描画に依存させない。
+- API の型と呼び出し（`createOpinionClient`）は
+  `packages/idobata-bot/`。サーバー
+  もその型を使う。テストもこのクライアントで通しで書く
+  （`controllers/api/opinions.test.ts`）。
+- ②の UI は当面このサイトの `web/client/opinions/`（`store.ts`、`panel.tsx`）。
+  動いたらパッケージへ移す。
+- 編集・削除は「その時点で賛同も被リンクも無く、採用されていない」ときだけ。
+  判定は書き込みの `WHERE` にも入れて、競合しても破られないようにする。
+
+## チャット（Claude API）
+
+設計書 §6。`POST /api/docs/:docId/chat` が 1 ターンを SSE で返す
+（`controllers/api/chat.ts`、`lib/chat/`）。ログイン不要。
+
+- 履歴はブラウザの `sessionStorage`
+  だけ（`web/client/opinions/chat.ts`）。毎ターン 全部送り、`done` イベントの
+  `messages` を足す。サーバーは何も保存しない。
+- `messages[0]`（文書と最初の選択）はサーバーが毎回同じバイト列で作る
+  （`lib/chat/prompt.ts`）。ここに変わるもの（意見の一覧など）を入れない。
+- 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`）。binding が無い
+  （ローカル・テスト）と素通し。弾いた件数だけ `filter_stats` に数える。
+- ツール（`lib/chat/tools.ts`）はサーバーで回す。段落はモデルにはブロック番号で
+  見せる。`draft_opinion` は `draft` イベントでブラウザへ渡し、フォームに入る。
+  投稿はユーザーがする。
+- Claude API を呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
+  差し替える（`controllers/api/chat.test.ts`）。
+- 型と SSE の読み方は `packages/idobata-bot/chat.ts`。
+
+## 認証 (API)
+
+RP 側にセッションは持たない（`docs/design.md`
+§3）。`web/server/middleware/auth.ts`:
+
+- `dpopClient()` — 全 API に付ける。`DPoP` proof を検証し、鍵の thumbprint を
+  `context.get(Client)` に置く。
+- `requireUser()` — ログイン必須の API に、`dpopClient()` の後に付ける。
+  `Authorization: DPoP <jws>`（IdP の `/session` が返す token）を IdP の JWKS で
+  検証し、`cnf.jkt` が proof の鍵と一致することを確かめて `context.get(User)` に
+  置く。初回は `users` を作る（nickname の初期値は IdP の値）。
+- ブラウザは `sessionStore.apiFetch(path, init)`（`web/client/session.ts`）で
+  呼ぶ。proof と token を付け、401 なら `/session` を取り直して 1
+  回だけ再送する。
+- テストは `@kuboon/dpop` の
+  `init({ keyStore: new InMemoryKeyRepository(), fetch })` で proof
+  を作り、`jose` のローカル鍵で IdP の token を作る
+  （`web/server/controllers/api/me.test.ts`）。
+
+## データベース (D1)
+
+D1 を `@remix-run/data-table` + `@remix-kbn/data-table-d1` で使う。
+
+- スキーマは `db/migrations/<YYYYMMDDHHmmss>_<name>/up.sql`（と `down.sql`）。
+  `web/server/db/schema.ts` の `table()` 定義と列を揃える（`schema.test.ts` が
+  全テーブルを往復させて確かめる）。
+- `web/server/db/mod.ts` の `getDb()` が DB を返す。入口ごとに `useDatabase()`
+  で 設定する: Worker は初回リクエストで `env.DB`、`router.tsx` は
+  `web/server/db/local.ts` の `openLocalDatabase()`（`LOCAL_DB` のファイル、
+  未設定ならメモリ。開くたびにマイグレーションを当てる）。`db/local.ts` は
+  `node:sqlite` を使うので `worker.ts` から import しない。
+- D1 には対話的トランザクションが無い。`db.transaction()` は書き込みを溜めて
+  `batch()` 1 回で送るので、中では書き込みの戻り値を使わない・書き込みの後に
+  読まない・入れ子にしない。
+- `deno task db migrate`（ローカルの `data/app.db`）、
+  `deno task db migrate --remote`（本番。`CLOUDFLARE_D1_DATABASE_ID` と D1 編集
+  権限のある `CLOUDFLARE_API_TOKEN` が要る）。
+
 ## 環境変数
 
 env アクセスは `web/server/config.ts` に集約し、ホスト非依存にしてある。
@@ -93,9 +137,9 @@ env アクセスは `web/server/config.ts` に集約し、ホスト非依存に�
 Workers は `cloudflare:workers` の `env`。後者は動的 `import()` なので、その
 モジュールを持たない Deno はロードで落ちずフォールバックできる (静的 import は
 Deno で catch 不能なエラーになる)。env は top-level await
-で起動時に一度だけ解決・ 保持するので `getConfig()` は sync。
+で起動時に一度だけ解決・保持するので `getConfig()` は sync。
 
-- `IDP_ORIGIN` — 外部 IdP の origin (例: `http://localhost:8000`)。 `/my`
+- `IDP_ORIGIN` — 外部 IdP の origin (例: `http://localhost:8000`)。`/my`
   ページが `${IDP_ORIGIN}/authorize` へ DPoP thumbprint と redirect_uri
   を付けて遷移し、戻った後 `${IDP_ORIGIN}/session` で userId を取得する。
 - `RP_ORIGIN` — このアプリの公開 origin。`POST /api/notify` のクライアント
@@ -104,68 +148,70 @@ Deno で catch 不能なエラーになる)。env は top-level await
 - `RP_SIGNING_KEY_JWK` — 任意。ES256 秘密鍵 (JWK JSON)。未設定ならプロセス毎に
   生成
   (開発用)。本番では固定鍵を設定し、再起動で鍵がローテートしないようにする。
-- `BASE_URL` — 静的ビルド専用。Pages のサブパス（PR プレビュー等）を `base`
-  にする。server（`deno serve` / Cloudflare）は常にルート配信なので読まない
-  （`web/server/deno.json` の `dev` 権限で ignore）。
-- `TURSO_DATABASE_URL` / `TURSO_AUTH_TOKEN` — `GET /api/turso` サンプル用の
-  Turso (libSQL) 接続。未設定なら 503 を返すのみ。
+  本番の鍵は手動の workflow `.github/workflows/rp-signing-key.yml` が CI 上で
+  生成して Worker secret に置く（GitHub には残らない）。既にあれば上書きしない
+  （`overwrite` を付けて実行すると作り直す）。
+- `ANTHROPIC_API_KEY` — チャットの Claude API キー（Worker secret）。未設定なら
+  チャットは `503`。Cloudflare でしか使わないので、Worker の secret に直接置く
+  （GitHub には置かない）。
+- `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
+  （`deno task dev` は `data/app.db`）。未設定ならメモリ。
+- `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`
+  を絶対 URL にする（`.github/workflows/cloudflare.yml` が設定）。未設定なら
+  相対パス。
 
-## Turso (libSQL) + data-table サンプル
-
-`GET /api/turso` が `@remix-run/data-table` のリレーショナル API で Turso に
-アクセスし、`visits` を記録して累計を返す。Turso の `@libsql/client` は非同期
-なので、公式の同期 SQLite 実装ではなく非同期の
-[`@remix-kbn/data-table-sqlite-turso`](https://jsr.io/@remix-kbn/data-table-sqlite-turso)
-(`createTursoDatabase(client)`) を使う。クライアントは edge 対応の
-`@libsql/client/web`。詳細は `web/server/lib/turso/README.md`。
-
-## デプロイ (Cloudflare Workers + GitHub Pages)
+## デプロイ (Cloudflare Workers)
 
 `web/server/router.tsx` が唯一のルーター定義で、素の `@remix-run/fetch-router`
-の router を default export する。ローカル (`deno serve`)
-とテストはこれをそのまま使い、デプロイは 2 通り。
+の router を default export する。ローカル (`deno serve`) とテストはこれを
+そのまま使う。
 
-- **Cloudflare Workers**: `.github/workflows/cloudflare.yml` が
-  `deno task
-  build:cf` を走らせ、**静的ビルド (`web/dist`) を Workers の
-  static assets** として、**server 専用ルート (`/api/*`,
-  `/.well-known/jwks.json`) だけを Worker (`web/server/worker.ts`)**
-  で配信する。`router.tsx` は `Deno.bundle` / `Deno.readTextFile` を使うので
-  Workers では動かさない。
-  - `cloudflare.config.ts` が `cf` CLI の設定 (`assets.runWorkerFirst` で Worker
-    に回すパスを指定)。
-  - `cf build` は Wrangler か Vite プラグインを呼ぶだけで `jsr:` を解決できない
-    ので使わない。`deno bundle` で作った Worker (`web/worker-dist/worker.js`) と
-    `web/dist` を `web/server/cf_build.ts` が Build Output Specification
-    (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
-    (`deno task cf ...` が `npm:cf` の実行)。
-  - 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
-    `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの
-    ブラウザからの unsafe メソッド（`POST /api/notify` など）を token 無しで
-    拒否する。別オリジンから API を叩く構成にするなら `trustedOrigins` を足す。
-  - DPoP セッションの保存先は `TURSO_DATABASE_URL` があれば Turso、無ければ
-    メモリ (isolate ごとなので本番では Turso を設定する)。
-- **GitHub Pages**: `.github/workflows/pages.yml` が `deno task build`
-  (`@remix-kbn/ssg`) を走らせ、同じ router を `fetch()` でクロールして
-  `web/dist` に静的 HTML を書き出す。クロールは `entryPoints` (`/`、og
-  画像、`/sw.js`) とそこからの リンクだけを辿る。どこからもリンクしていない
-  `/api/*` は静的化されない。 main は Pages ルート、PR は preview
-  サブパスにデプロイされる (`BASE_URL` から `base` が決まる)。
+`.github/workflows/cloudflare.yml` が main への push で `deno task build:cf` を
+走らせ、**静的ビルド (`web/dist`) を Workers の static assets** として、
+**server 専用ルート (`/api/*`, `/.well-known/jwks.json`) だけを Worker
+(`web/server/worker.ts`)** で配信する。
 
-静的版では API が無いので、`/my` の「サーバーから送信」(`POST /api/notify`) は
-動かない。それ以外 (DPoP + IdP は全てブラウザ → id.kbn.one の直接通信)
-は静的版でも動く。
+- 静的ビルドは `deno task build`（`@remix-kbn/ssg`）。同じ router を `fetch()`
+  でクロールして `web/dist` に静的 HTML を書き出す。クロールは `entryPoints`
+  (`/`、`/my`、og 画像、`/sw.js`) とそこからのリンクだけを辿る。どこからも
+  リンクしていない `/api/*` は静的化されない。
+- 文書ページ `/d/:docId` は文書ごとに静的化できないので、ビルドは `/d/_shell` を
+  1 枚だけ書き、Worker が `/d/*` をその殻で返す（`env.ASSETS` から取り、
+  `HTMLRewriter` で `<title>` / OGP を文書のものに書き換える。
+  `web/server/document_shell.ts`）。文書の中身は island が API から取る。
+- `router.tsx` は `Deno.bundle` / `Deno.readTextFile` を使うので Workers では
+  動かさない。**API を足したら `worker.ts` にも配線する**（`router.tsx` だけに
+  足すと Cloudflare に出ない）。
+- `cloudflare.config.ts` が `cf` CLI の設定 (`assets.runWorkerFirst` で Worker
+  に回すパスを指定)。秘密（`RP_SIGNING_KEY_JWK` 等）は設定に書かず Worker の
+  secret に置く。
+- `cf build` は Wrangler か Vite プラグインを呼ぶだけで `jsr:` を解決できない
+  ので使わない。`deno bundle` で作った Worker (`web/worker-dist/worker.js`) と
+  `web/dist` を `web/server/cf_build.ts` が Build Output Specification
+  (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
+  (`deno task cf ...` が `npm:cf` の実行)。
+- 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
+  `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの
+  ブラウザからの unsafe メソッド（`POST /api/notify` など）を token 無しで
+  拒否する。別オリジンから API を叩く構成にするなら `trustedOrigins` を足す。
 
 ## 開発
 
 ```bash
 deno task dev      # web アプリの開発サーバー起動
-deno task build    # GitHub Pages 用の静的サイトを web/dist へ生成
+deno task build    # 静的サイトを web/dist へ生成
 deno task build:cf # 静的サイト + Worker を .cloudflare/output へ (cf deploy --prebuilt 用)
-deno task test     # パッケージ/サーバーのテスト実行
+deno task test     # サーバーのテスト実行
 deno task test:browser  # ブラウザ smoke テスト (lightpanda)
 deno task check    # 型チェック + lint + fmt
 ```
+
+変更前後に `deno task check && deno task test && deno task build:cf` と
+`deno task test:browser` を通す。
+
+- 追加した `import` は `deno.json`（ルート）にだけ書く。メンバー側の `deno.json`
+  には書かない。
+- コンポーネントランタイムは `@remix-run/component`（`ui` ではない）。
 
 ## コーディング規約
 

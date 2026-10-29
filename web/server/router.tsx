@@ -6,16 +6,15 @@
  * controller has to name an action for every route in the map it owns: leave one out and the
  * router throws while it is being built, rather than answering a route with nothing.
  *
- * What is exported is a plain `@remix-run/fetch-router` router, and it is deployed two ways from
- * this one file:
+ * What is exported is a plain `@remix-run/fetch-router` router, used two ways:
  *
  * - **Locally** `deno serve router.tsx` answers the pages *and* the server-only routes (`/api/*`,
  *   `/.well-known/jwks.json`) live. This is also what the tests run against.
- * - **Cloudflare Workers** serves the static build below as static assets and answers only the
- *   server-only routes, from `worker.ts` — this file uses Deno-only APIs and is not deployed there.
- * - **GitHub Pages** is `@remix-kbn/ssg` crawling this same object with `fetch()` and writing each
- *   response to disk. It starts from `entryPoints` and follows links, and nothing links to the
- *   server-only routes, so `/api/*` is never generated.
+ * - **The static build** (`deno task build`, `@remix-kbn/ssg`) crawls this same object with
+ *   `fetch()` and writes each response to disk. It starts from `entryPoints` and follows links,
+ *   and nothing links to the server-only routes, so `/api/*` is never generated. Cloudflare
+ *   Workers serves that build as static assets and answers only the server-only routes, from
+ *   `worker.ts` — this file uses Deno-only APIs and is not deployed there.
  */
 
 import {
@@ -26,36 +25,38 @@ import {
 import { cop } from "@remix-run/cop-middleware";
 import { render } from "@remix-run/render-middleware";
 import { createFileTree, githubPages } from "@remix-kbn/ssg/site";
-import { stripBase } from "@remix-kbn/ssg/base";
 import type { FileServerBehavior } from "@remix-kbn/ssg/site";
 
 import { assets, assetsPath } from "./assets.ts";
-// [feature:spa] `spaRuntime`
-import { clientRuntime, spaRuntime } from "./runtime.ts";
+import { openLocalDatabase } from "./db/local.ts";
+import { clientRuntime } from "./runtime.ts";
 import { ogImage, ogPaths, serveOgImage } from "./og/mod.ts";
-import { base } from "../client/base.ts";
 import { Layout, type PageModule } from "../client/layout.tsx";
-import { routes } from "../client/routes.ts";
+import { DOCUMENT_SHELL_ID, routes } from "../client/routes.ts";
 
-import { blogController } from "./blog/mod.tsx"; // [feature:blog]
-import * as Fullscreen from "../client/pages/fullscreen.tsx"; // [feature:fullscreen]
+import * as DocumentPage from "../client/pages/document.tsx";
 import * as Home from "../client/pages/index.tsx";
-import * as Showcase from "../client/pages/showcase.tsx"; // [feature:showcase]
-import * as Spa from "../client/pages/spa.tsx"; // [feature:spa]
-import { versions } from "./versions.ts"; // [feature:showcase]
-import * as Hydration from "../client/pages/hydration.tsx";
 import * as My from "../client/pages/my.tsx";
+import * as NewDocument from "../client/pages/new.tsx";
 
-// [feature:protected-api] / [feature:server-send] / [feature:turso]: the server API.
-import { apiController } from "./controllers/api/controller.ts";
+import { createChatController } from "./controllers/api/chat.ts";
+import { createDocsController } from "./controllers/api/docs.ts";
+import { createMeController } from "./controllers/api/me.ts";
+import { createOpinionsController } from "./controllers/api/opinions.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
-import { tursoAction } from "./controllers/api/turso.ts";
 import { jwksAction } from "./controllers/well_known.ts";
 
-/** Deploy path prefix. The build strips it back off when writing, so output lands at the root. */
-export { base };
+/**
+ * The database: a local SQLite file when `LOCAL_DB` names one (`deno task dev` does), otherwise a
+ * fresh in-memory one — which is what the tests and the static build get. Either way it is
+ * migrated on open. On Cloudflare the Worker uses the D1 binding instead; see `worker.ts`.
+ */
+await openLocalDatabase(Deno.env.get("LOCAL_DB") ?? ":memory:");
 
-/** Where the static build deploys. The build writes the file this rule would serve. */
+/**
+ * How the static build lays out its files: `/my` as `my/index.html`, which is what Workers static
+ * assets' `auto-trailing-slash` serves.
+ */
 export const fileServer: FileServerBehavior = githubPages();
 
 /**
@@ -74,8 +75,6 @@ function pageAction(route: { href(): string }, page: PageModule) {
         title={page.title}
         description={page.description}
         image={image}
-        viewport={page.viewport}
-        bare={page.bare}
         script={page.hydrate ? clientRuntime : null}
       >
         <Page />
@@ -86,7 +85,7 @@ function pageAction(route: { href(): string }, page: PageModule) {
 /** The files under `client/static/`, served verbatim at their own names. */
 const staticFiles = await createFileTree({
   rootDir: `${import.meta.dirname}/../client/static`,
-  basePath: `${base}/static`,
+  basePath: "/static",
   cacheControl: "public, max-age=3600",
 });
 
@@ -94,16 +93,15 @@ const staticFiles = await createFileTree({
  * The service worker, from `client/sw.js`.
  *
  * It is a route of its own rather than a file under `static/` because a worker's scope is the
- * directory it is served from: `${base}/static/sw.js` could only control `${base}/static/`.
+ * directory it is served from: `/static/sw.js` could only control `/static/`.
  */
 const serviceWorker = await Deno.readTextFile(
   new URL("../client/sw.js", import.meta.url),
 );
 
 /**
- * `cop()` rejects unsafe cross-origin browser requests (`POST /api/notify`, the protected API) by
- * `Sec-Fetch-Site` / `Origin`, without tokens. `render({ assets })` puts `context.render(node)` on
- * every request.
+ * `cop()` rejects unsafe cross-origin browser requests (`POST /api/notify`) by `Sec-Fetch-Site` /
+ * `Origin`, without tokens. `render({ assets })` puts `context.render(node)` on every request.
  */
 const router = createRouter({ middleware: [cop(), render({ assets })] });
 
@@ -124,113 +122,56 @@ declare module "@remix-run/fetch-router" {
 const top = createController(routes, {
   actions: {
     home: pageAction(routes.home, Home),
-    // [feature:fullscreen]
-    fullscreen: pageAction(routes.fullscreen, Fullscreen),
-    // [feature:showcase] Written out rather than built by `pageAction` because its badges are
-    // read off the import map, which a page in `client/` cannot open.
-    showcase: (context) =>
+    my: pageAction(routes.my, My),
+    newDocument: pageAction(routes.newDocument, NewDocument),
+    // One page for every document, with no card of its own: the Worker writes the document's own
+    // title over the generic one, and a card per document would need drawing per document.
+    document: (context) =>
       context.render(
         <Layout
-          title={Showcase.title}
-          description={Showcase.description}
-          image={showcaseImage}
-          script={Showcase.hydrate ? clientRuntime : null}
+          title={DocumentPage.title}
+          description={DocumentPage.description}
+          image={null}
+          script={clientRuntime}
         >
-          <Showcase.default versions={versions()} />
+          <DocumentPage.default />
         </Layout>,
       ),
-    hydration: pageAction(routes.hydration, Hydration),
-    my: pageAction(routes.my, My),
-    jwks: jwksAction, // [feature:server-send]
+    jwks: jwksAction,
   },
 });
 
 /**
  * The server-only API. Static builds never reach it — see the header.
  *
- * `routes.api.protected` is a map of its own, owned by `apiController`, because the DPoP
- * middleware belongs to those two routes and not to `notify`/`turso`.
+ * `routes.api.me` is a map of its own, owned by its controller, because the auth middleware
+ * belongs to those routes and not to `notify`.
  */
 const api = createController(routes.api, {
   actions: {
-    notify: notifyAction, // [feature:server-send]
-    turso: tursoAction, // [feature:turso]
-  },
-});
-
-/** [feature:showcase] */
-const showcaseImage = ogImage(routes.showcase.href(), Showcase);
-
-// [feature:spa] Everything down to `router.map` below. It
-// has a controller of its own because the view its `:id` names is handed to the screen rather than
-// read back out of the router, and because it loads a different script than every other page.
-const spaImages = new Map(
-  Spa.SPA_IDS.map((id) => [
-    id,
-    ogImage(routes.spa.show.href({ id }), {
-      title: Spa.titleFor(id),
-      description: Spa.description,
-    }),
-  ]),
-);
-
-const spa = createController(routes.spa, {
-  actions: {
-    show: (context) => {
-      const id = Spa.parseSpaId(context.params.id);
-      // A `404` for anything that is not one of the demo's views, which is what an unknown id is.
-      // The router in the browser answers the same URL the same way — see `client/spa/app.tsx`.
-      if (id === null) {
-        return new Response("Not Found", {
-          status: 404,
-          headers: { "content-type": "text/plain; charset=utf-8" },
-        });
-      }
-
-      return context.render(
-        <Layout
-          title={Spa.titleFor(id)}
-          description={Spa.description}
-          image={spaImages.get(id) ?? null}
-          // Not `clientRuntime`: this page starts a router rather than hydrating islands, and a
-          // document gets one runtime. See `client/spa/entry.ts`.
-          script={spaRuntime}
-          // The shell's links leave the client router's world, so they go to the browser.
-          documentLinks
-        >
-          {
-            /*
-            What the build writes into the file. `run()` replaces it with its own first render as
-            soon as the script loads, which is the takeover the screen reports.
-          */
-          }
-          <Spa.default id={id} renderedBy="server" navigations={0} />
-        </Layout>,
-      );
-    },
+    notify: notifyAction,
   },
 });
 
 router.map(routes, top);
-// [feature:spa]
-router.map(routes.spa, spa);
-// [feature:blog] Both blog routes at once: the listing, and one article.
-router.map(routes.blog, blogController);
 router.map(routes.api, api);
-router.map(routes.api.protected, apiController); // [feature:protected-api]
+router.map(routes.api.me, createMeController());
+router.map(routes.api.docs, createDocsController());
+router.map(routes.api.opinions, createOpinionsController());
+router.map(routes.api.chat, createChatController());
 
-router.get(`${base}/static/*path`, ({ request }) => staticFiles.fetch(request));
+router.get("/static/*path", ({ request }) => staticFiles.fetch(request));
 router.get(`${assetsPath}/*path`, ({ request }) => assets.fetch(request));
-router.get(`${base}/og/*path`, ({ request }) => serveOgImage(request));
-// [feature:push] The service worker.
+router.get("/og/*path", ({ request }) => serveOgImage(request));
+// The push service worker.
 router.get(
-  `${base}/sw.js`,
+  "/sw.js",
   () =>
     new Response(serviceWorker, {
       headers: {
         "content-type": "text/javascript; charset=utf-8",
         "cache-control": "no-cache",
-        "service-worker-allowed": `${base}/`,
+        "service-worker-allowed": "/",
       },
     }),
 );
@@ -238,17 +179,19 @@ router.get(
 /**
  * Where the static crawl starts.
  *
- * Pages are reached by following links from `/`. The exceptions are things nothing links to: the
- * social cards (an `og:image` is an absolute URL meant for someone else's server) and the service
- * worker (the push manager registers it by URL from script). `/api/*` is deliberately absent.
+ * Pages are reached by following links from `/`. The exceptions are things nothing links to in
+ * the static HTML: `/my` (the nav's link to it is drawn by the sign-in island, only once signed
+ * in), the document page's shell (every `/d/:docId` is served from it, and the links to documents
+ * are drawn by the list island), the social cards (an `og:image` is an absolute URL meant for someone else's server) and the
+ * service worker (the push manager registers it by URL from script). `/api/*` is deliberately
+ * absent.
  */
 export const entryPoints: readonly string[] = [
   "/",
+  routes.my.href(),
+  routes.document.href({ docId: DOCUMENT_SHELL_ID }),
   ...ogPaths(),
-  "/sw.js", // [feature:push]
-  // [feature:helper] The chat's chunk is only named by an attribute on the help button, which a
-  // link-following crawl never reads — see `client/helper/install.ts`.
-  `/${stripBase(clientRuntime.helper, base)}`,
+  "/sw.js",
 ];
 
 export default router;

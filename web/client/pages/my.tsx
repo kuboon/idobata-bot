@@ -1,11 +1,13 @@
 import { css, type Handle } from "@remix-run/component";
 
 import { IDP_ORIGIN } from "../idp.ts";
+import { MyOpinionsCard } from "../islands/my_opinions_card.tsx";
+import { ProfileCard } from "../islands/profile_card.tsx";
 import { PushCard } from "../islands/push_card.tsx";
 import { SignInCard } from "../islands/signin_card.tsx";
 import { cardStyle } from "../theme.ts";
 
-export const title = "マイページ — Remix3 on Deno Template";
+export const title = "マイページ — idobata-bot";
 export const description =
   "外部 IdP (id.kbn.one) を使ったサインインとプッシュ通知のサンプル。";
 
@@ -25,6 +27,10 @@ export default function My(_handle: Handle) {
       </p>
 
       <SignInCard idpOrigin={IDP_ORIGIN} />
+
+      <ProfileCard />
+
+      <MyOpinionsCard />
 
       <PushCard idpOrigin={IDP_ORIGIN} />
 
