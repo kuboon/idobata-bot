@@ -125,6 +125,10 @@ D1 を `@remix-run/data-table` + `@remix-kbn/data-table-d1` で使う。
 - D1 には対話的トランザクションが無い。`db.transaction()` は書き込みを溜めて
   `batch()` 1 回で送るので、中では書き込みの戻り値を使わない・書き込みの後に
   読まない・入れ子にしない。
+- D1 は 1 文に bind できるパラメータが 100 個まで（ローカルの SQLite は数千）。
+  `createMany` は 行数×列数、`inList` は値の数だけ使うので、行や値が増えうる所は
+  `chunksForD1()`（`db/mod.ts`）で分ける。`db/local.ts` のローカル DB も 100 を
+  超える文を拒むので、テストと `deno task dev` で本番と同じく落ちる。
 - `deno task db migrate`（ローカルの `data/app.db`）、
   `deno task db migrate --remote`（本番。`CLOUDFLARE_D1_DATABASE_ID` と D1 編集
   権限のある `CLOUDFLARE_API_TOKEN` が要る）。

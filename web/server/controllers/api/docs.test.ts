@@ -161,3 +161,22 @@ Deno.test("invalid documents are refused with a reason", async () => {
     assert(json.error.includes(error), json.error);
   }
 });
+
+Deno.test("a long document registers within D1's 100 parameters per statement", async () => {
+  // 40 segments × 7 columns would be one 280-parameter insert; D1 refuses that, and the local
+  // database refuses it the same way.
+  const { fetchDpop, signedIn } = await setup();
+  const markdown = Array.from({ length: 40 }, (_, i) => `段落 ${i + 1}。`).join(
+    "\n\n",
+  );
+  const created = await fetchDpop(
+    appUrl("/api/docs"),
+    post({ title: "長い文書", markdown }, await signedIn()),
+  );
+  assertEquals(created.status, 201);
+  const { id } = await created.json();
+  const { document } = await (await fetchDpop(appUrl(`/api/docs/${id}`)))
+    .json();
+  assertEquals(document.segments.length, 40);
+  assertEquals(document.segments[39].text, "段落 40。");
+});

@@ -280,3 +280,48 @@ Deno.test("my opinions span documents, newest first", async () => {
   assert(mine.every((o) => o.mine));
   assertEquals(new Set(mine.map((o) => o.id)), new Set([first.id, second.id]));
 });
+
+Deno.test("statements stay within D1's 100 parameters: 20 targets, 120 opinions", async () => {
+  const { browser } = await setup();
+  const owner = await browser("owner");
+  const created = await owner.fetch("/api/docs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      title: "多くの段落",
+      markdown: Array.from({ length: 20 }, (_, i) => `段落 ${i + 1}。`).join(
+        "\n\n",
+      ),
+    }),
+  });
+  const { id: docId } = await created.json();
+  const { document } = await (await owner.fetch(`/api/docs/${docId}`)).json();
+  const keys = (document.segments as { key: string }[]).map((s) => s.key);
+
+  // 20 targets × 6 columns: one insert would bind 120.
+  const many = await owner.client.post(
+    docId,
+    input({
+      targets: keys.map((segmentKey) => ({
+        kind: "segment" as const,
+        segmentKey,
+        stance: "concern" as const,
+      })),
+    }),
+  );
+  assertEquals(many.targets.length, 20);
+
+  // Listing reads every opinion's targets by ID: 120 IDs in one IN (…) would bind 120.
+  for (let i = 1; i < 120; i++) {
+    await owner.client.post(
+      docId,
+      input({
+        title: `意見 ${i}`,
+        targets: [{ kind: "document", stance: "proposal" }],
+      }),
+    );
+  }
+  const { opinions } = await owner.client.list(docId);
+  assertEquals(opinions.length, 120);
+  assertEquals(opinions[0].targets.length, 20);
+});
