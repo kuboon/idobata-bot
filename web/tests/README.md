@@ -2,8 +2,11 @@
 
 opt-in のブラウザテスト。デフォルトの `deno task test`
 には含まれず、`deno task test:browser` で明示的に起動する。lightpanda バイナリは
-`deno run -A npm:@lightpanda/browser install` で取得する (@lightpanda/browser
-1.6 以降は install 時に自動取得しない。CI も同じ手順)。
+`deno run -A npm:@lightpanda/browser install` で取得するか、GitHub のリリース
+（`https://github.com/lightpanda-io/browser/releases/download/nightly/lightpanda-x86_64-linux`
+など）から取って `LIGHTPANDA_EXECUTABLE_PATH` にパスを渡す。CI は後者
+（`install` が照合する `versions.json` のチェックサムが nightly
+と食い違うことがあるため）。
 
 ## 前提
 
