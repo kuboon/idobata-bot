@@ -16,6 +16,30 @@ import {
 
 export type Db = D1BackedDatabase;
 
+/**
+ * The most parameters D1 binds to one statement. Local SQLite allows thousands, so a statement
+ * that goes over passes locally and fails on Cloudflare; `db/local.ts` enforces this limit too.
+ */
+export const D1_MAX_PARAMS = 100;
+
+/**
+ * Splits rows into groups that each fit one statement under {@link D1_MAX_PARAMS} — for
+ * `createMany`, with one parameter per column per row, or `inList`, with one per value.
+ *
+ * @param paramsPerRow Parameters each row binds: its column count, or 1 for an `inList` value
+ */
+export function chunksForD1<T>(
+  rows: readonly T[],
+  paramsPerRow: number,
+): T[][] {
+  const size = Math.max(1, Math.floor(D1_MAX_PARAMS / paramsPerRow));
+  const chunks: T[][] = [];
+  for (let i = 0; i < rows.length; i += size) {
+    chunks.push(rows.slice(i, i + size));
+  }
+  return chunks;
+}
+
 let current: Db | undefined;
 
 /**

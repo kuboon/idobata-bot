@@ -21,7 +21,7 @@ import type {
 } from "@kuboon/idobata-bot";
 import { inList, sql } from "@remix-run/data-table";
 
-import { getDb } from "../db/mod.ts";
+import { chunksForD1, getDb } from "../db/mod.ts";
 import {
   newId,
   now,
@@ -168,8 +168,9 @@ async function assertTargetsExist(
   }
 }
 
+/** An opinion's target rows, in groups that each fit one D1 insert. */
 function targetRows(opinionId: string, targets: Target[]) {
-  return targets.map((target) => ({
+  const rows = targets.map((target) => ({
     id: newId(),
     opinion_id: opinionId,
     kind: target.kind,
@@ -177,6 +178,7 @@ function targetRows(opinionId: string, targets: Target[]) {
     target_opinion_id: target.kind === "opinion" ? target.opinionId : null,
     stance: target.stance,
   }));
+  return chunksForD1(rows, Object.keys(rows[0] ?? {}).length);
 }
 
 type OpinionRow = {
@@ -221,9 +223,12 @@ async function toOpinions(
   viewerId: string | null,
 ): Promise<Opinion[]> {
   if (rows.length === 0) return [];
-  const targets = await getDb().findMany(opinionTargets, {
-    where: inList("opinion_id", rows.map((r) => r.id)),
-  });
+  // One IN (…) per 100 opinions: each ID is a parameter.
+  const targets = (await Promise.all(
+    chunksForD1(rows.map((r) => r.id), 1).map((ids) =>
+      getDb().findMany(opinionTargets, { where: inList("opinion_id", ids) })
+    ),
+  )).flat();
   const byOpinion = new Map<string, Target[]>();
   for (const t of targets) {
     const list = byOpinion.get(t.opinion_id) ?? [];
@@ -347,7 +352,9 @@ export async function createOpinion(
       created_at: at,
       updated_at: at,
     });
-    await tx.createMany(opinionTargets, targetRows(id, input.targets));
+    for (const chunk of targetRows(id, input.targets)) {
+      await tx.createMany(opinionTargets, chunk);
+    }
   });
   return (await getOpinion(id, authorId))!;
 }
@@ -400,7 +407,9 @@ export async function updateOpinion(
   }
   await db.transaction(async (tx) => {
     await tx.deleteMany(opinionTargets, { where: { opinion_id: opinionId } });
-    await tx.createMany(opinionTargets, targetRows(opinionId, input.targets));
+    for (const chunk of targetRows(opinionId, input.targets)) {
+      await tx.createMany(opinionTargets, chunk);
+    }
   });
   return (await getOpinion(opinionId, userId))!;
 }

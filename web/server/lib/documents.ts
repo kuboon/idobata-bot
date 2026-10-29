@@ -8,7 +8,7 @@
 
 import { sql } from "@remix-run/data-table";
 
-import { getDb } from "../db/mod.ts";
+import { chunksForD1, getDb } from "../db/mod.ts";
 import {
   documents,
   newId,
@@ -163,18 +163,19 @@ export async function createDocument(
       released_at: at,
       created_at: at,
     });
-    await tx.createMany(
-      segments,
-      parsed.map((segment, ord) => ({
-        id: newId(),
-        version_id: versionId,
-        segment_key: newSegmentKey(),
-        ord,
-        kind: segment.kind,
-        text: segment.text,
-        heading_path: segment.headingPath,
-      })),
-    );
+    const rows = parsed.map((segment, ord) => ({
+      id: newId(),
+      version_id: versionId,
+      segment_key: newSegmentKey(),
+      ord,
+      kind: segment.kind,
+      text: segment.text,
+      heading_path: segment.headingPath,
+    }));
+    // In inserts D1 can take: one per ~14 segments, all still in the one batch.
+    for (const chunk of chunksForD1(rows, Object.keys(rows[0] ?? {}).length)) {
+      await tx.createMany(segments, chunk);
+    }
   });
 
   return documentId;
