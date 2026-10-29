@@ -5,9 +5,9 @@
  * server-only routes in the Worker (`web/server/worker.ts`, bundled to `web/worker-dist/worker.js`
  * by `deno task build:worker`). `deno task build:cf` makes both.
  *
- * Pull requests to main get a Worker Preview (`.github/workflows/preview.yml`, built with
- * `deno task build:cf --preview`). A preview has its own D1, so a PR never writes to the
- * production data.
+ * Cloudflare's own build (Workers Builds) deploys main and previews branches. A preview build
+ * (`deno task build:cf --preview`) binds its own D1, so a branch never writes to the production
+ * data.
  */
 
 import { bindings, defineConfig } from "cf/config";
@@ -19,8 +19,8 @@ export default defineConfig((ctx) => ({
     name: "idobata-bot",
     compatibilityDate: "2026-10-29",
     entrypoint: "./web/worker-dist/worker.js",
-    // `<preview>-idobata-bot.<subdomain>.workers.dev` for each PR's preview (preview.yml); off
-    // by default, and without it a preview deploys with no URL.
+    // `<preview>-idobata-bot.<subdomain>.workers.dev` for each preview; off by default, and
+    // without it a preview deploys with no URL.
     previewUrls: true,
     // Workers Logs, as the dashboard turned on when it created the Worker.
     observability: { enabled: true, logs: { enabled: true } },

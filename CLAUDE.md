@@ -157,7 +157,7 @@ Deno で catch 不能なエラーになる)。env は top-level await
 - `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
   （`deno task dev` は `data/app.db`）。未設定ならメモリ。
 - `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`
-  を絶対 URL にする（`.github/workflows/cloudflare.yml` が設定）。未設定なら
+  を絶対 URL にする（Cloudflare 側のビルドの環境変数に設定）。未設定なら
   相対パス。
 
 ## デプロイ (Cloudflare Workers)
@@ -166,9 +166,10 @@ Deno で catch 不能なエラーになる)。env は top-level await
 の router を default export する。ローカル (`deno serve`) とテストはこれを
 そのまま使う。
 
-`.github/workflows/cloudflare.yml` が main への push で `deno task build:cf` を
-走らせ、**静的ビルド (`web/dist`) を Workers の static assets** として、
-**server 専用ルート (`/api/*`, `/.well-known/jwks.json`) だけを Worker
+デプロイは Cloudflare 側のビルド（Workers Builds、GitHub 連携。設定はダッシュ
+ボード）が行い、main への push で本番、ブランチで preview を出す。ビルドは
+`deno task build:cf` で、**静的ビルド (`web/dist`) を Workers の static assets**
+として、 **server 専用ルート (`/api/*`, `/.well-known/jwks.json`) だけを Worker
 (`web/server/worker.ts`)** で配信する。
 
 - 静的ビルドは `deno task build`（`@remix-kbn/ssg`）。同じ router を `fetch()`
@@ -192,17 +193,19 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `web/dist` を `web/server/cf_build.ts` が Build Output Specification
   (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
   (`deno task cf ...` が `npm:cf` の実行)。
-- Worker の設定が最後にダッシュボードで変わっていると（ダッシュボードで作った・
-  編集した）、`cf deploy` は上書きの確認を出し、CI ではそこで止まる。手動の
-  `.github/workflows/cloudflare-adopt.yml` が疑似端末で Yes と答えてデプロイ
-  する（上書きする差分はログに出る）。一度通れば通常のデプロイに戻る。
-- main への PR には Worker Preview（`.github/workflows/preview.yml`）。
-  `deno task build:cf --preview` が preview 用の Build Output を書き、
-  `cf previews deploy pr-<番号> --prebuilt` で出す（URL は job summary）。PR を
-  閉じると消す。preview は別の D1 `idobata-bot-preview` を使う
-  （`cloudflare.config.ts` の
-  `ctx.isPreview`）。マイグレーションは両方に当てる。 preview の origin は IdP
-  の whitelist に無いので、サインインは動かない。
+- 本番のデプロイコマンドは `deno task deploy`（`deploy.sh`）。Worker の設定が
+  最後に Cloudflare 側で変わっていると（ダッシュボードで secret を設定した等）、
+  `cf deploy` は上書きの確認を出し、ビルドの中ではそこで止まる。`deploy.sh` は
+  疑似端末で Yes と答える（`cloudflare.config.ts` が正。上書きする差分はログに
+  出る）。
+- preview（main 以外のブランチ）のデプロイコマンドは
+  `deno task deploy:preview`。 ビルドコマンドは本番と共通なので、preview 用に
+  `build:cf --preview` で Build Output を書き直してから
+  `cf previews deploy --prebuilt`（preview 名は ブランチ名）。
+- preview は別の D1 `idobata-bot-preview` を使う（`cloudflare.config.ts` の
+  `ctx.isPreview`。`deno task build:cf --preview` が preview 用の Build Output
+  を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
+  whitelist に無いので、サインインは動かない。
 - 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
   `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの
   ブラウザからの unsafe メソッド（`POST /api/notify` など）を token 無しで
