@@ -2,7 +2,7 @@
  * Documents and their versions, as the API hands them out.
  *
  * A document is registered as Markdown and stored as version 1, already released, split into
- * segments (docs/design.md §4). Later versions — drafts, release, diffs — build on the same
+ * segments (docs/architecture.md §3). Later versions — drafts, release, diffs — build on the same
  * tables.
  */
 

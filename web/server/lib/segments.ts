@@ -3,7 +3,7 @@
  *
  * A segment is one top-level Markdown block — a heading, a paragraph, a whole list, a table, a
  * code block, a block quote — kept as its own Markdown source, sliced out of the document exactly
- * as written (docs/design.md §4).
+ * as written (docs/architecture.md §3).
  *
  * The blocks are the top-level nodes of the same parser `@kuboon/md` renders with (remark-parse +
  * remark-gfm), so a segment is always one whole thing the reader sees as one thing. The viewer
@@ -105,7 +105,7 @@ export function parseSegments(markdown: string): ParsedSegment[] {
 
 /**
  * A key for a new segment: short, unique within its version, and kept by the same block in later
- * versions once versions are matched up (docs/design.md §4).
+ * versions once versions are matched up (docs/architecture.md §3).
  */
 export function newSegmentKey(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(6));

@@ -71,7 +71,7 @@ export const routes = route("", {
       mine: get("/me/opinions"),
     }),
     /**
-     * The AI chat about a document (docs/design.md §6): the history in, the turn out as
+     * The AI chat about a document (docs/architecture.md §5): the history in, the turn out as
      * server-sent events. No sign-in needed.
      */
     chat: route({

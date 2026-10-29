@@ -1,5 +1,5 @@
 /**
- * The pre-filter in front of the chat (docs/design.md §6): Workers AI's Clef decides whether a
+ * The pre-filter in front of the chat (docs/architecture.md §5): Workers AI's Clef decides whether a
  * message is about the document before the Claude API is called at all, so a reader who is not
  * signed in cannot use the bot as a general-purpose chatbot.
  *

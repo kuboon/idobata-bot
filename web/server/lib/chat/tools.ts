@@ -66,7 +66,7 @@ async function searchOpinions(
   const words = terms(input.query);
 
   // Matching is by words for now; similar-opinion search with embeddings comes later
-  // (docs/design.md §8).
+  // (docs/architecture.md §7).
   const scored = opinions
     .filter((o) =>
       keys.size === 0 ||

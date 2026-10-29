@@ -2,7 +2,7 @@
  * `/api/docs` — the document list, one document with its segments, and registering a new one.
  *
  * Reading is open to anyone with a DPoP key; registering needs a signed-in user, and for now any
- * signed-in user may (docs/design.md §12 — a sysad role can restrict it later).
+ * signed-in user may (docs/design.md §11 — a sysad role can restrict it later).
  */
 
 import { createController } from "@remix-run/fetch-router";
