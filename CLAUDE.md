@@ -55,6 +55,23 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
   位置で段落に対応づける（`web/client/lib/document.ts`）。段落ごとに別々に
   描画しないのは、参照リンクや脚注を解決するため。
 
+## 意見（3 つの部品）
+
+設計書 §2「3 つの部品」: ①文書の保存・表示（このサイト）、②意見・賛同の投稿
+（JSR `@kuboon/idobata-bot` = `packages/idobata-bot/`）、③意見の管理（API）。
+
+- ③の API（`/api/docs/:docId/opinions`、`/api/opinions/*`、`/api/me/opinions`）
+  は `web/server/lib/opinions.ts` と `controllers/api/opinions.ts`。文書は
+  ID・版・ 段落キーとしか知らない。①の描画に依存させない。
+- API の型と呼び出し（`createOpinionClient`）は
+  `packages/idobata-bot/`。サーバー
+  もその型を使う。テストもこのクライアントで通しで書く
+  （`controllers/api/opinions.test.ts`）。
+- ②の UI は当面このサイトの `web/client/opinions/`（`store.ts`、`panel.tsx`）。
+  動いたらパッケージへ移す。
+- 編集・削除は「その時点で賛同も被リンクも無く、採用されていない」ときだけ。
+  判定は書き込みの `WHERE` にも入れて、競合しても破られないようにする。
+
 ## 認証 (API)
 
 RP 側にセッションは持たない（`docs/design.md`

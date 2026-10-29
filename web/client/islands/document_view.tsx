@@ -4,7 +4,9 @@
  * The page is one static file for every document (`/d/_shell`, see `routes.document`), so the
  * document's ID comes from the URL and everything else from `GET /api/docs/:docId`. The Markdown is
  * rendered with `@kuboon/md` in one piece and cut back into the server's segments
- * (`lib/document.ts`); clicking a segment selects it, for the chat and the opinions that come next.
+ * (`lib/document.ts`); clicking a segment selects it. Each segment shows how many opinions are about
+ * it, and the opinion panel (`opinions/panel.tsx`) opens right after the last selected segment —
+ * or, with nothing selected, after the document — with those opinions and the form to write one.
  */
 
 import {
@@ -22,6 +24,8 @@ import {
 } from "@kuboon/md/hast_to_element.ts";
 
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
+import { OpinionPanel } from "../opinions/panel.tsx";
+import { OpinionStore } from "../opinions/store.ts";
 import { deadlineLabel, formatDateTime } from "../lib/format.ts";
 import { DOCUMENT_SHELL_ID, routes } from "../routes.ts";
 import { sessionStore } from "../session.ts";
@@ -54,12 +58,24 @@ function docIdFromLocation(): string | null {
 
 const element = createElement as unknown as CreateElement<RemixNode>;
 
+/** A segment's short name for the panel: a heading's text, or the start of the block. */
+function segmentLabel(segment: Segment): string {
+  const plain = segment.text
+    .replace(/^#{1,6}\s+/, "")
+    .replace(/[*_`>|\[\]#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return plain.length > 24 ? `${plain.slice(0, 24)}…` : plain;
+}
+
 export const DocumentView = clientEntry(
   import.meta.url,
   function DocumentView(handle: Handle<DocumentViewProps>) {
     let detail: Detail | null = null;
     let blocks: Block[] = [];
     let error = "";
+    let store: OpinionStore | null = null;
+    let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
 
     const toggle = (key: string) => {
@@ -82,7 +98,19 @@ export const DocumentView = clientEntry(
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           detail = ((await response.json()) as { document: Detail }).document;
           blocks = await renderDocument(detail.markdown, detail.segments);
+          segmentLabels = new Map(
+            detail.segments.map((s) => [s.key, segmentLabel(s)]),
+          );
           document.title = `${detail.title} — idobata-bot`;
+          store = new OpinionStore(detail.id);
+          store.addEventListener("change", () => handle.update(), {
+            signal: handle.signal,
+          });
+          // Signing in or out changes which opinions are yours and which you support.
+          sessionStore.addEventListener("change", () => void store?.load(), {
+            signal: handle.signal,
+          });
+          void store.load();
         } catch (e) {
           error = (e as Error).message;
         }
@@ -97,6 +125,23 @@ export const DocumentView = clientEntry(
         );
       }
       if (!detail) return <p mix={metaStyle}>読み込んでいます…</p>;
+
+      // The selection in document order: the panel goes after the last selected segment.
+      const selection = detail.segments.filter((s) => selected.has(s.key));
+      const lastSelected = selection.at(-1)?.key ?? null;
+      const panel = store
+        ? (
+          <OpinionPanel
+            store={store}
+            selected={selection.map((s) => ({
+              key: s.key,
+              label: segmentLabels.get(s.key) ?? "",
+            }))}
+            segmentLabels={segmentLabels}
+            open={detail.open}
+          />
+        )
+        : null;
 
       return (
         <>
@@ -136,22 +181,28 @@ export const DocumentView = clientEntry(
           </aside>
 
           <article mix={proseStyle}>
-            {blocks.map(({ segment, node }, i) => {
+            {blocks.flatMap(({ segment, node }, i) => {
               const rendered = hastToElement(node, element) as RemixNode;
-              if (!segment) return <div key={`n${i}`}>{rendered}</div>;
+              if (!segment) return [<div key={`n${i}`}>{rendered}</div>];
               const key = segment.key;
-              return (
+              const count = store?.aboutSegment(key).length ?? 0;
+              const block = (
                 <div
                   key={key}
                   data-segment={key}
                   data-selected={selected.has(key) ? "" : undefined}
                   mix={[segmentStyle, on("click", () => toggle(key))]}
                 >
+                  {count ? <span mix={countStyle}>意見 {count}</span> : null}
                   {rendered}
                 </div>
               );
+              return key === lastSelected && panel
+                ? [block, <div key="opinion-panel">{panel}</div>]
+                : [block];
             })}
           </article>
+          {lastSelected === null ? panel : null}
         </>
       );
     };
@@ -177,6 +228,19 @@ const selectionStyle = css({
   borderRadius: radius.md,
   background: color.card,
   fontSize: "0.9rem",
+});
+
+const countStyle = css({
+  float: "right",
+  marginInlineStart: "0.5rem",
+  marginTop: "0.35rem",
+  padding: "0.05rem 0.5rem",
+  borderRadius: "999px",
+  background: color.card,
+  border: `1px solid ${color.border}`,
+  color: color.muted,
+  fontSize: "0.75rem",
+  fontWeight: 400,
 });
 
 const segmentStyle = css({
