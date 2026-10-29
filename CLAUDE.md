@@ -184,7 +184,9 @@ Deno で catch 不能なエラーになる)。env は top-level await
   足すと Cloudflare に出ない）。
 - `cloudflare.config.ts` が `cf` CLI の設定 (`assets.runWorkerFirst` で Worker
   に回すパスを指定)。秘密（`RP_SIGNING_KEY_JWK` 等）は設定に書かず Worker の
-  secret に置く。
+  secret に置く。`bindings.secret()`
+  で宣言もしない（宣言すると必須になり、Worker
+  がまだ無い初回デプロイが通らない。宣言しなくてもデプロイは secret を残す）。
 - `cf build` は Wrangler か Vite プラグインを呼ぶだけで `jsr:` を解決できない
   ので使わない。`deno bundle` で作った Worker (`web/worker-dist/worker.js`) と
   `web/dist` を `web/server/cf_build.ts` が Build Output Specification
