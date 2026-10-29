@@ -194,6 +194,7 @@ stance = concern | proposal | support | question | objection
   `state` を検査してから再生する。thinking block は Claude 側で署名されている
   ので、書き換えれば API が受け付けないか捨てるだけで、改ざんしても得るものは
   ない。
+- 意見の投稿にも会話は添付しない（意見は表明・タイトル・本文だけ）。
 
 ### 流れ
 
