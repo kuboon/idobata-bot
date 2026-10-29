@@ -177,8 +177,7 @@ export function Shell(handle: Handle<ShellProps>) {
       <main mix={[bandStyle, mainStyle]}>{handle.props.children}</main>
       <footer mix={[bandStyle, footerStyle]}>
         <p>
-          Built with <a href="https://remix.run">Remix v3</a> on{" "}
-          <a href="https://deno.com">Deno</a>.
+          <a href="https://dd2030.org/">デジタル民主主義2030</a>
         </p>
       </footer>
     </>
