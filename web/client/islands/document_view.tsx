@@ -80,9 +80,20 @@ export const DocumentView = clientEntry(
     let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
 
-    const toggle = (key: string) => {
-      if (selected.has(key)) selected.delete(key);
-      else selected.add(key);
+    /**
+     * A click selects that paragraph alone; Ctrl/⌘/Shift-click adds it to (or takes it out of)
+     * the selection. Clicking the only selected paragraph again clears the selection.
+     */
+    const select = (key: string, event: MouseEvent) => {
+      if (event.ctrlKey || event.metaKey || event.shiftKey) {
+        if (selected.has(key)) selected.delete(key);
+        else selected.add(key);
+      } else if (selected.size === 1 && selected.has(key)) {
+        selected.clear();
+      } else {
+        selected.clear();
+        selected.add(key);
+      }
       handle.update();
     };
 
@@ -166,7 +177,12 @@ export const DocumentView = clientEntry(
 
           <aside mix={selectionStyle}>
             {selected.size === 0
-              ? <span>段落をクリックすると選択できます。</span>
+              ? (
+                <span>
+                  段落をクリックすると選択できます（Ctrl / ⌘ / Shift
+                  を押しながらで複数）。
+                </span>
+              )
               : (
                 <>
                   <span>{selected.size} 件の段落を選択中</span>
@@ -197,7 +213,10 @@ export const DocumentView = clientEntry(
                   key={key}
                   data-segment={key}
                   data-selected={selected.has(key) ? "" : undefined}
-                  mix={[segmentStyle, on("click", () => toggle(key))]}
+                  mix={[
+                    segmentStyle,
+                    on("click", (event) => select(key, event)),
+                  ]}
                 >
                   {count ? <span mix={countStyle}>意見 {count}</span> : null}
                   {rendered}
