@@ -1,132 +1,44 @@
 /**
  * The AI chat about a document, from the reader's side (docs/design.md §6).
  *
- * The conversation lives only here, in the browser: each turn sends the whole history and gets
- * back what the turn added, which is appended as is — the server keeps nothing. The history is
- * the Claude API's `messages` after the first one (the document, which the server adds), so its
- * blocks are opaque to this module apart from the text it shows.
+ * The wire format is `@remix-kbn/helper-agent`'s: the browser holds the transcript, posts all of
+ * it every turn, and reads the turn back as server-sent events. What is this service's own is
+ * where to post it and the one tool the browser runs, `draft_opinion`, whose input is a
+ * {@link ChatDraft}.
  */
 
-import type { AuthedFetch } from "./client.ts";
 import type { OpinionInput } from "./types.ts";
 
-/** One message of the history, in the Claude API's shape. */
-export interface ChatMessage {
-  role: "user" | "assistant";
-  content: string | ChatBlock[];
-}
-
-/** A content block. Only `text` blocks are read here; the rest are kept for the server. */
-export type ChatBlock = { type: string; [key: string]: unknown };
-
-/** What the AI put in front of the reader: an opinion to post, or an opinion to support. */
+/**
+ * What the AI put in front of the reader — the input of the browser's `draft_opinion` tool: an
+ * opinion to post (targets by segment key), or an opinion to support.
+ */
 export type ChatDraft =
   | { type: "opinion"; input: OpinionInput }
   | { type: "support"; opinionId: string };
 
-/** `POST /api/docs/:docId/chat`. */
-export interface ChatRequest {
-  /** The version the conversation is about — fixed when it starts. */
-  versionNumber: number;
-  /** The segments selected when it started — fixed too, so the server's first message is. */
-  segmentKeys: string[];
-  /** The history with the reader's new message last. */
-  messages: ChatMessage[];
-}
-
-/** The server-sent events of one turn, in order: text and drafts as they come, then one end. */
-export type ChatEvent =
-  | { type: "text"; text: string }
-  | { type: "draft"; draft: ChatDraft }
-  /** The turn is over; `messages` is what it added to the history. */
-  | { type: "done"; messages: ChatMessage[] }
-  /** The pre-filter refused the message: nothing is added to the history. */
-  | { type: "rejected"; message: string }
-  | { type: "error"; message: string };
+/** The tool the browser runs: it opens the posting dialog with a {@link ChatDraft}. */
+export const DRAFT_TOOL_NAME = "draft_opinion";
 
 /** The longest message a reader can send. */
 export const CHAT_MESSAGE_MAX_LENGTH = 2000;
 
-/** The text of a message, as the chat shows it. */
-export function messageText(message: ChatMessage): string {
-  if (typeof message.content === "string") return message.content;
-  return message.content
-    .filter((b) => b.type === "text" && typeof b.text === "string")
-    .map((b) => b.text as string)
-    .join("");
-}
-
-/** Whether a message is something a person reads — not a turn of tool results. */
-export function isShown(message: ChatMessage): boolean {
-  return messageText(message).trim() !== "";
-}
-
 /**
- * Reads a server-sent event stream into {@link ChatEvent}s.
+ * Where a conversation posts its turns. The version and the paragraphs selected when it started
+ * are part of the URL: they make the conversation's first message, which must not change.
  *
- * @param body The response body of `POST /api/docs/:docId/chat`
+ * @param documentId The document
+ * @param versionNumber The version the reader is looking at
+ * @param segmentKeys The selected segments, by key
+ * @param baseUrl The service's origin; this page's when omitted
  */
-export async function* readChatEvents(
-  body: ReadableStream<Uint8Array>,
-): AsyncGenerator<ChatEvent> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let end: number;
-    while ((end = buffer.indexOf("\n\n")) >= 0) {
-      const frame = buffer.slice(0, end);
-      buffer = buffer.slice(end + 2);
-      const data = frame
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      if (data) yield JSON.parse(data) as ChatEvent;
-    }
-  }
-}
-
-export interface ChatTurnOptions {
-  baseUrl?: string;
-  fetch: AuthedFetch;
-  documentId: string;
-  request: ChatRequest;
-  signal?: AbortSignal;
-}
-
-/**
- * Sends one turn and yields its events.
- *
- * @throws When the service refuses the request outright (a `4xx`/`5xx` before the stream starts)
- */
-export async function* sendChatTurn(
-  options: ChatTurnOptions,
-): AsyncGenerator<ChatEvent> {
-  const response = await options.fetch(
-    `${options.baseUrl ?? ""}/api/docs/${
-      encodeURIComponent(options.documentId)
-    }/chat`,
-    {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(options.request),
-      signal: options.signal,
-    },
-  );
-  if (!response.ok || !response.body) {
-    let message = response.statusText;
-    try {
-      message = ((await response.json()) as { error?: string }).error ??
-        message;
-    } catch {
-      // Not JSON: the status text will do.
-    }
-    yield { type: "error", message };
-    return;
-  }
-  yield* readChatEvents(response.body);
+export function chatUrl(
+  documentId: string,
+  versionNumber: number,
+  segmentKeys: readonly string[],
+  baseUrl = "",
+): string {
+  const query = new URLSearchParams({ v: String(versionNumber) });
+  if (segmentKeys.length > 0) query.set("s", segmentKeys.join(","));
+  return `${baseUrl}/api/docs/${encodeURIComponent(documentId)}/chat?${query}`;
 }

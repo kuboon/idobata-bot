@@ -4,9 +4,11 @@
  * The page is one static file for every document (`/d/_shell`, see `routes.document`), so the
  * document's ID comes from the URL and everything else from `GET /api/docs/:docId`. The Markdown is
  * rendered with `@kuboon/md` in one piece and cut back into the server's segments
- * (`lib/document.ts`); clicking a segment selects it. Each segment shows how many opinions are about
- * it, and the opinion panel (`opinions/panel.tsx`) opens right after the last selected segment —
- * or, with nothing selected, after the document — with those opinions and the form to write one.
+ * (`lib/document.ts`); clicking a segment selects it. A segment with opinions about it is
+ * underlined and shows how many, and the opinion panel (`opinions/panel.tsx`) opens right after the
+ * last selected segment — or, with nothing selected, after the document — with those opinions and
+ * the buttons to talk with the AI (`opinions/assistant.ts`, in the corner) or write one. Both end in
+ * the posting dialog (`opinions/post_dialog.tsx`), which there is one of for the page.
  */
 
 import {
@@ -24,8 +26,11 @@ import {
 } from "@kuboon/md/hast_to_element.ts";
 
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
-import { ChatStore } from "../opinions/chat.ts";
+import type { HelperAgentPanel } from "@remix-kbn/helper-agent/client";
+import { openAssistant } from "../opinions/assistant.ts";
+import { ComposeStore } from "../opinions/compose.ts";
 import { OpinionPanel } from "../opinions/panel.tsx";
+import { PostDialog } from "../opinions/post_dialog.tsx";
 import { OpinionStore } from "../opinions/store.ts";
 import { deadlineLabel, formatDateTime } from "../lib/format.ts";
 import { DOCUMENT_SHELL_ID, routes } from "../routes.ts";
@@ -76,9 +81,47 @@ export const DocumentView = clientEntry(
     let blocks: Block[] = [];
     let error = "";
     let store: OpinionStore | null = null;
-    let chat: ChatStore | null = null;
     let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
+    const compose = new ComposeStore();
+    /** The chat in the corner, and the selection it is about. */
+    let assistant: { chat: HelperAgentPanel; about: string } | null = null;
+
+    /**
+     * Shows the chat about the current selection. A conversation about another selection is
+     * ended first — its first message cannot change — after asking, if it has begun.
+     */
+    const talk = () => {
+      if (!detail) return;
+      const keys = detail.segments
+        .filter((s) => selected.has(s.key))
+        .map((s) => s.key);
+      const about = keys.join(",");
+      if (assistant?.about === about) {
+        assistant.chat.show();
+        return;
+      }
+      if (assistant) {
+        if (
+          assistant.chat.session.messages.length > 0 &&
+          !confirm("いまの対話を終えて、選んだ段落について新しく始めますか？")
+        ) {
+          assistant.chat.show();
+          return;
+        }
+        assistant.chat.dispose();
+      }
+      assistant = {
+        chat: openAssistant({
+          documentId: detail.id,
+          versionNumber: detail.version.number,
+          segmentKeys: keys,
+          compose,
+        }),
+        about,
+      };
+    };
+    handle.signal.addEventListener("abort", () => assistant?.chat.dispose());
 
     /**
      * A click selects that paragraph alone; Ctrl/⌘/Shift-click adds it to (or takes it out of)
@@ -116,9 +159,6 @@ export const DocumentView = clientEntry(
           );
           document.title = `${detail.title} — idobata-bot`;
           store = new OpinionStore(detail.id);
-          if (detail.open) {
-            chat = new ChatStore(detail.id, detail.version.number);
-          }
           store.addEventListener("change", () => handle.update(), {
             signal: handle.signal,
           });
@@ -155,7 +195,8 @@ export const DocumentView = clientEntry(
             }))}
             segmentLabels={segmentLabels}
             open={detail.open}
-            chat={chat}
+            compose={compose}
+            onTalk={talk}
           />
         )
         : null;
@@ -213,6 +254,8 @@ export const DocumentView = clientEntry(
                   key={key}
                   data-segment={key}
                   data-selected={selected.has(key) ? "" : undefined}
+                  data-opinions={count ? "" : undefined}
+                  title={count ? `意見 ${count} 件。クリックで表示` : undefined}
                   mix={[
                     segmentStyle,
                     on("click", (event) => select(key, event)),
@@ -228,6 +271,15 @@ export const DocumentView = clientEntry(
             })}
           </article>
           {lastSelected === null ? panel : null}
+          {store
+            ? (
+              <PostDialog
+                compose={compose}
+                store={store}
+                segmentLabels={segmentLabels}
+              />
+            )
+            : null}
         </>
       );
     };
@@ -275,6 +327,14 @@ const segmentStyle = css({
   borderRadius: radius.sm,
   cursor: "pointer",
   "&:hover": { background: color.card },
+  // Paragraphs with opinions are underlined before anything is selected.
+  "&[data-opinions]": {
+    textDecorationLine: "underline",
+    textDecorationStyle: "dotted",
+    textDecorationColor: color.accent,
+    textDecorationThickness: "2px",
+    textUnderlineOffset: "0.3em",
+  },
   "&[data-selected]": {
     borderInlineStartColor: color.accent,
     background: color.card,

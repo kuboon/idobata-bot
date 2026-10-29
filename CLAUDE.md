@@ -74,22 +74,40 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 
 ## チャット（Claude API）
 
-設計書 §6。`POST /api/docs/:docId/chat` が 1 ターンを SSE で返す
-（`controllers/api/chat.ts`、`lib/chat/`）。ログイン不要。
+設計書 §6。[`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent)
+の上に作る。`POST /api/docs/:docId/chat?v=<版>&s=<段落キー,…>` が 1 ターンを
+helper-agent の形式（SSE）で返す（`controllers/api/chat.ts` が
+`helperAgentController` に `lib/chat/mod.ts` の `chatAgent` を渡す）。ログイン
+不要。
 
-- 履歴はブラウザの `sessionStorage`
-  だけ（`web/client/opinions/chat.ts`）。毎ターン 全部送り、`done` イベントの
-  `messages` を足す。サーバーは何も保存しない。
+- 画面: 意見のある段落は下線。段落を選ぶと意見パネル（`opinions/panel.tsx`）に
+  「AI と対話する」が出て、右下に helper-agent のパネルが開く
+  （`opinions/assistant.ts`）。選択が変われば新しい会話。
+- 履歴はブラウザの helper-agent のセッションだけ（メモリ。タブを閉じる・
+  サインインで遷移すると消える）。assistant の `state` に API の content
+  をそのまま入れて往復させ、サーバーは `block()` で検査して再生する。サーバーは
+  何も保存しない。
 - `messages[0]`（文書と最初の選択）はサーバーが毎回同じバイト列で作る
-  （`lib/chat/prompt.ts`）。ここに変わるもの（意見の一覧など）を入れない。
-- 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`）。binding が無い
-  （ローカル・テスト）と素通し。弾いた件数だけ `filter_stats` に数える。
-- ツール（`lib/chat/tools.ts`）はサーバーで回す。段落はモデルにはブロック番号で
-  見せる。`draft_opinion` は `draft` イベントでブラウザへ渡し、フォームに入る。
-  投稿はユーザーがする。
+  （`lib/chat/prompt.ts`）。版と選択は URL の query で固定する。ここに変わるもの
+  （意見の一覧など）を入れない。
+- 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`、`worker.ts` の
+  `useAi(env.AI)`）。binding が無い（ローカル・テスト）と素通し。弾いた件数だけ
+  `filter_stats` に数え、定型文を返す。
+- ツール: `search_opinions` / `get_opinion` はサーバーで回す
+  （`lib/chat/tools.ts`）。段落はモデルにはブロック番号で見せる。
+  `draft_opinion` だけはブラウザのツール: サーバーが `resolveDraft` で検査して
+  段落キーに直した `ChatDraft` を tool-call で渡し、ブラウザが下書き入りの投稿
+  ダイアログ（`opinions/post_dialog.tsx`、`opinions/compose.ts`）を開いて、
+  投稿した／閉じたを結果として返す。投稿はユーザーがする。
+- tool の model への定義は常にサーバーの `TOOLS`（ブラウザが送る schema は
+  使わない。キャッシュの prefix を変えないため）。
+- `@kuboon/chat-element` 0.1.0 は、テキスト無しで始まる 2 ラウンド目を前の
+  ラウンドの tool 結果より前に並べてしまうので、ラウンドの頭で空の `text`
+  を送っている（`chatAgent`）。
 - Claude API を呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
-  差し替える（`controllers/api/chat.test.ts`）。
-- 型と SSE の読み方は `packages/idobata-bot/chat.ts`。
+  差し替え、helper-agent の `HelperAgentSession` で通す
+  （`controllers/api/chat.test.ts`）。
+- URL と `ChatDraft` の型は `packages/idobata-bot/chat.ts`。
 
 ## 認証 (API)
 

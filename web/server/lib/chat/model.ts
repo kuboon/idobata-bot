@@ -22,11 +22,13 @@ export interface ChatModel {
   /**
    * Runs one model turn, calling `onText` with each piece of text as it streams.
    *
+   * @param signal Aborts the call — the reader closed the chat
    * @returns The complete message — thinking blocks and all, to be appended to the history as is
    */
   run(
     request: ModelRequest,
     onText: (text: string) => void,
+    signal?: AbortSignal,
   ): Promise<BetaMessage>;
 }
 
@@ -37,7 +39,7 @@ export const CHAT_MODEL = "claude-sonnet-5-5";
 export function anthropicModel(apiKey: string): ChatModel {
   const client = new Anthropic({ apiKey });
   return {
-    async run(request, onText) {
+    async run(request, onText, signal) {
       const stream = client.beta.messages.stream({
         model: CHAT_MODEL,
         max_tokens: 16000,
@@ -52,7 +54,7 @@ export function anthropicModel(apiKey: string): ChatModel {
         tool_choice: { type: "auto" },
         // The conversation after the document is cached too, turn by turn.
         cache_control: { type: "ephemeral" },
-      });
+      }, { signal });
       stream.on("text", onText);
       return await stream.finalMessage();
     },
