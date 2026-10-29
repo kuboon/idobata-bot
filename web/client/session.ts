@@ -1,7 +1,7 @@
 /**
  * Shared DPoP session store for the browser.
  *
- * The navbar (NavAuth) and the /my cards (SignInCard, PushCard) all need the
+ * The navbar (NavAuth) and the /my cards (SignOut, PushCard, …) all need the
  * same session: this browser's DPoP key plus a `/session` probe against the
  * IdP. The islands are code-split out of one graph (`server/assets.ts`), so
  * this module is emitted once into a chunk they share and there is exactly one
