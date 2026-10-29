@@ -15,6 +15,7 @@ import {
   type SerializableValue,
 } from "@remix-run/component";
 
+import { defaultDeadline } from "../lib/format.ts";
 import { routes } from "../routes.ts";
 import { sessionStore } from "../session.ts";
 import { actionStyle, alertStyle, metaStyle, primaryStyle } from "../theme.ts";
@@ -117,9 +118,13 @@ export const NewDocumentForm = clientEntry(
             />
           </label>
           <label mix={labelStyle}>
-            募集期日（任意。過ぎると AI との対話と投稿を止めます）
+            募集期日（既定は 1 か月後の 0:00。空にすると期限なし。過ぎると AI
+            との対話と投稿を止めます）
             <input
               type="datetime-local"
+              // Rendered only in the browser (the form waits for the session), so "now" is the
+              // reader's, not the static build's.
+              defaultValue={defaultDeadline()}
               mix={[
                 inputStyle,
                 ref((node) => (fields.closesAt = node as HTMLInputElement)),

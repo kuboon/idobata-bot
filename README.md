@@ -5,7 +5,8 @@
 への疑問・補足として書いたりできる。
 
 - 本番: <https://idobata-bot.kuboon.workers.dev/>
-- 設計: [docs/design.md](./docs/design.md)（コンセプト）、[docs/architecture.md](./docs/architecture.md)（技術詳細）
+- 設計:
+  [docs/design.md](./docs/design.md)（コンセプト）、[docs/architecture.md](./docs/architecture.md)（技術詳細）
 - 開発のルール: [CLAUDE.md](./CLAUDE.md)
 
 Remix v3 + Deno で書き、Cloudflare Workers にデプロイする。

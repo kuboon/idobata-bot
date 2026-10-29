@@ -11,3 +11,21 @@ export function deadlineLabel(closesAt: string | null, open: boolean): string {
   if (!open) return "募集終了";
   return closesAt ? `${formatDateTime(closesAt)} まで募集` : "期限なし";
 }
+
+/**
+ * The default deadline for a new document: midnight at the start of the day one month from now,
+ * as a `datetime-local` value (local time). A month ahead of the 31st lands on the next month's
+ * last day rather than spilling over.
+ *
+ * @param now The moment to count from
+ */
+export function defaultDeadline(now = new Date()): string {
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  const day = new Date(year, month, Math.min(now.getDate(), lastDay));
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${
+    pad(day.getDate())
+  }T00:00`;
+}
