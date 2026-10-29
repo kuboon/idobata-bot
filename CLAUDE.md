@@ -231,8 +231,9 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `build:cf --preview` で Build Output を書き直してから
   `cf previews deploy --prebuilt`（preview 名は ブランチ名）。
 - preview は別の D1 `idobata-bot-preview` を使う（`cloudflare.config.ts` の
-  `ctx.isPreview`。`deno task build:cf --preview` が preview 用の Build Output
-  を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
+  `ctx.isPreview`。本番 `idobata-bot` とも名前と ID
+  の両方で指定してある。`deno task build:cf --preview` が preview 用の Build
+  Output を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
   whitelist に無いので、サインインは動かない。
 - 両 router（`router.tsx` と `worker.ts`）に `@remix-run/cop-middleware` の
   `cop()` を入れてある。`Sec-Fetch-Site` / `Origin` で、クロスオリジンの
