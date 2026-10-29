@@ -7,6 +7,10 @@ on:
 permissions:
   contents: read
 
+# One deploy at a time, shared with cloudflare-adopt.yml.
+concurrency:
+  group: cloudflare-deploy
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
