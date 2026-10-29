@@ -198,6 +198,10 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `cf deploy` は上書きの確認を出し、ビルドの中ではそこで止まる。`deploy.sh` は
   疑似端末で Yes と答える（`cloudflare.config.ts` が正。上書きする差分はログに
   出る）。
+- preview（main 以外のブランチ）のデプロイコマンドは
+  `deno task deploy:preview`。 ビルドコマンドは本番と共通なので、preview 用に
+  `build:cf --preview` で Build Output を書き直してから
+  `cf previews deploy --prebuilt`（preview 名は ブランチ名）。
 - preview は別の D1 `idobata-bot-preview` を使う（`cloudflare.config.ts` の
   `ctx.isPreview`。`deno task build:cf --preview` が preview 用の Build Output
   を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
