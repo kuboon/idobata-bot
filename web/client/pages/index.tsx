@@ -1,5 +1,6 @@
 import { type Handle } from "@remix-run/component";
 
+import { DocumentList } from "../islands/document_list.tsx";
 import { routes } from "../routes.ts";
 import { buttonStyle } from "../theme.ts";
 
@@ -24,6 +25,8 @@ export default function Home(_handle: Handle) {
       <p>
         <a href={routes.newDocument.href()} mix={buttonStyle}>文書を登録する</a>
       </p>
+
+      <DocumentList />
     </>
   );
 }

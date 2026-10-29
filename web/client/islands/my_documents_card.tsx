@@ -1,9 +1,6 @@
 /**
  * MyDocumentsCard — the `/my` page's list of the documents the signed-in user registered, from
  * `GET /api/me/documents`, with the way to register another.
- *
- * There is no public list of documents: a document is reached by its link, and its owner finds it
- * here.
  */
 
 import {
