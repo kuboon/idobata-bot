@@ -81,3 +81,21 @@ export async function serveDocumentShell(
     })
     .transform(shell);
 }
+
+/**
+ * Serves a document's owner page, `/d/:docId/admin`: the shell as it is — it is the owner's own
+ * page, so there is no link preview to get right.
+ *
+ * @param request The request for `/d/:docId/admin`
+ * @param assets The static assets, where the shell is
+ */
+export function serveDocumentAdminShell(
+  request: Request,
+  assets: AssetsBinding,
+): Promise<Response> {
+  const shellUrl = new URL(
+    routes.documentAdmin.href({ docId: DOCUMENT_SHELL_ID }),
+    request.url,
+  );
+  return assets.fetch(new Request(shellUrl, request));
+}

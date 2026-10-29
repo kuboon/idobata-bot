@@ -32,8 +32,7 @@ function describe(opinion: Opinion, context: ToolContext, full = false) {
   return {
     id: opinion.id,
     title: opinion.title,
-    claim: full ? opinion.claim : excerpt(opinion.claim),
-    ...(full ? { reason: opinion.reason, suggestion: opinion.suggestion } : {}),
+    body: full ? opinion.body : excerpt(opinion.body),
     targets: opinion.targets.map((t) => {
       if (t.kind === "segment") {
         const index = context.segments.findIndex((s) => s.key === t.segmentKey);
@@ -73,8 +72,7 @@ async function searchOpinions(
       o.targets.some((t) => t.kind === "segment" && keys.has(t.segmentKey))
     )
     .map((o) => {
-      const haystack = `${o.title} ${o.claim} ${o.reason} ${o.suggestion}`
-        .toLowerCase();
+      const haystack = `${o.title} ${o.body}`.toLowerCase();
       return { o, score: words.filter((w) => haystack.includes(w)).length };
     })
     .filter(({ score }) => words.length === 0 || score > 0)
@@ -109,9 +107,7 @@ export interface DraftInput {
   type: "opinion" | "support";
   support_opinion_id: string;
   title: string;
-  claim: string;
-  reason: string;
-  suggestion: string;
+  body: string;
   targets: {
     kind: "segment" | "document" | "opinion";
     segment_index: number;
@@ -166,17 +162,13 @@ export async function resolveDraft(
       "targets が空です。何に対する意見か、一つ以上指定してください。",
     );
   }
-  if (!input.title?.trim() || !input.claim?.trim()) {
-    return error("title と claim は必須です。");
-  }
+  if (!input.title?.trim()) return error("title は必須です。");
   return {
     draft: {
       type: "opinion",
       input: {
         title: input.title,
-        claim: input.claim,
-        reason: input.reason ?? "",
-        suggestion: input.suggestion ?? "",
+        body: input.body ?? "",
         targets,
       },
     },

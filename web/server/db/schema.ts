@@ -108,9 +108,8 @@ export const opinions = table({
     version_id: c.text(),
     author_id: c.text(),
     title: c.text(),
-    claim: c.text(),
-    reason: c.text(),
-    suggestion: c.text(),
+    /** May be empty. */
+    body: c.text(),
     status: c.enum(["published", "adopted", "hidden"] as const),
     created_at: c.text(),
     updated_at: c.text(),

@@ -48,7 +48,7 @@ interface Detail {
   id: string;
   title: string;
   description: string;
-  owner: { nickname: string };
+  owner: { id: string; nickname: string };
   closesAt: string | null;
   open: boolean;
   opinionCount: number;
@@ -256,6 +256,15 @@ export const DocumentView = clientEntry(
                 ? `（${formatDateTime(detail.version.releasedAt)}）`
                 : ""}
             </span>
+            {sessionStore.userId === detail.owner.id
+              ? (
+                <p>
+                  <a href={routes.documentAdmin.href({ docId: detail.id })}>
+                    この文書を管理する
+                  </a>
+                </p>
+              )
+              : null}
           </header>
 
           <aside mix={selectionStyle}>

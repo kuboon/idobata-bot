@@ -63,3 +63,13 @@ Deno.test("GET /d/:docId renders the document page for any ID", async () => {
     assertStringIncludes(html, "<title>文書 — idobata-bot</title>");
   }
 });
+
+Deno.test("GET /d/:docId/admin renders the owner page for any ID", async () => {
+  for (const id of ["_shell", "abc"]) {
+    const res = await router.fetch(new Request(`http://x/d/${id}/admin`));
+    assertEquals(res.status, 200);
+    const html = await res.text();
+    assertStringIncludes(html, "document_admin");
+    assertStringIncludes(html, "<title>文書の管理 — idobata-bot</title>");
+  }
+});

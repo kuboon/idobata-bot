@@ -93,11 +93,7 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
             </li>
           ))}
         </ul>
-        <p>{opinion.claim}</p>
-        <p mix={metaStyle}>理由: {opinion.reason}</p>
-        {opinion.suggestion
-          ? <p mix={metaStyle}>修正案: {opinion.suggestion}</p>
-          : null}
+        {opinion.body ? <p mix={bodyStyle}>{opinion.body}</p> : null}
         <span mix={metaStyle}>
           {opinion.author.nickname} ・ {formatDateTime(opinion.createdAt)}{" "}
           ・ 賛同 {opinion.supportCount}
@@ -213,6 +209,9 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
 }
 
 const panelStyle = css({ "& h2": { fontSize: "1.1rem" } });
+
+/** The body keeps the writer's line breaks. */
+const bodyStyle = css({ whiteSpace: "pre-wrap" });
 
 const listStyle = css({ listStyle: "none", padding: 0, margin: 0 });
 

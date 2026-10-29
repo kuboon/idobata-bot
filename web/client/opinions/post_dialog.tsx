@@ -40,10 +40,8 @@ const targetKey = (t: Target) =>
     : "d";
 
 const FIELDS = [
-  ["title", "要旨（一行）", false],
-  ["claim", "主張", true],
-  ["reason", "理由・根拠", true],
-  ["suggestion", "具体的な修正案（任意）", true],
+  ["title", "タイトル", false],
+  ["body", "本文（任意）", true],
 ] as const;
 
 export function PostDialog(handle: Handle<PostDialogProps>) {
@@ -98,9 +96,7 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
     try {
       const opinion = await store.post({
         title: fields.title?.value ?? "",
-        claim: fields.claim?.value ?? "",
-        reason: fields.reason?.value ?? "",
-        suggestion: fields.suggestion?.value ?? "",
+        body: fields.body?.value ?? "",
         targets: targets.map((t) => ({
           ...t,
           stance: (stances.get(targetKey(t))?.value as Stance | undefined) ??
@@ -152,7 +148,7 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
           ? (
             <blockquote mix={quoteStyle}>
               <strong>{opinion.title}</strong>
-              <p>{opinion.claim}</p>
+              {opinion.body ? <p mix={preWrapStyle}>{opinion.body}</p> : null}
               <span mix={metaStyle}>賛同 {opinion.supportCount}</span>
             </blockquote>
           )
@@ -250,8 +246,7 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
             {multiline
               ? (
                 <textarea
-                  rows={3}
-                  required={name !== "suggestion"}
+                  rows={6}
                   defaultValue={draft.draft[name] ?? ""}
                   mix={[
                     inputStyle,
@@ -339,6 +334,8 @@ const bodyStyle = css({
   padding: "1rem 1.25rem",
   "& h2": { fontSize: "1.1rem", margin: 0 },
 });
+
+const preWrapStyle = css({ whiteSpace: "pre-wrap" });
 
 const quoteStyle = css({
   margin: 0,

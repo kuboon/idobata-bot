@@ -284,3 +284,83 @@ export async function getDocument(
     })),
   };
 }
+
+/** Who owns a document, or `null` when there is no such document. */
+export async function documentOwner(id: string): Promise<string | null> {
+  const row = await getDb().find(documents, id);
+  return row?.owner_id ?? null;
+}
+
+/** What `PATCH /api/docs/:docId` changes — only the fields it was given. */
+export interface DocumentPatch {
+  title?: string;
+  description?: string;
+  /** `null` takes the deadline away. */
+  closesAt?: string | null;
+}
+
+/**
+ * Checks a `PATCH /api/docs/:docId` body.
+ *
+ * @returns The changes, or the reason they were refused
+ */
+export function parseDocumentPatch(
+  body: unknown,
+): { ok: true; value: DocumentPatch } | { ok: false; error: string } {
+  const input = (body ?? {}) as Record<string, unknown>;
+  const value: DocumentPatch = {};
+  if (input.title !== undefined) {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (!title || title.length > TITLE_MAX_LENGTH) {
+      return {
+        ok: false,
+        error: `title must be 1–${TITLE_MAX_LENGTH} characters`,
+      };
+    }
+    value.title = title;
+  }
+  if (input.description !== undefined) {
+    const description = typeof input.description === "string"
+      ? input.description.trim()
+      : null;
+    if (description === null || description.length > DESCRIPTION_MAX_LENGTH) {
+      return {
+        ok: false,
+        error:
+          `description must be at most ${DESCRIPTION_MAX_LENGTH} characters`,
+      };
+    }
+    value.description = description;
+  }
+  if (input.closesAt !== undefined) {
+    if (input.closesAt === null || input.closesAt === "") {
+      value.closesAt = null;
+    } else {
+      const at = typeof input.closesAt === "string"
+        ? Date.parse(input.closesAt)
+        : NaN;
+      if (Number.isNaN(at)) {
+        return { ok: false, error: "closesAt must be an ISO 8601 date-time" };
+      }
+      value.closesAt = new Date(at).toISOString();
+    }
+  }
+  return { ok: true, value };
+}
+
+/** Changes a document's title, description or deadline. The caller has checked the owner. */
+export async function updateDocument(
+  id: string,
+  patch: DocumentPatch,
+): Promise<void> {
+  const changes: {
+    title?: string;
+    description?: string;
+    closes_at?: string | null;
+    updated_at: string;
+  } = { updated_at: now() };
+  if (patch.title !== undefined) changes.title = patch.title;
+  if (patch.description !== undefined) changes.description = patch.description;
+  if (patch.closesAt !== undefined) changes.closes_at = patch.closesAt;
+  await getDb().update(documents, id, changes);
+}

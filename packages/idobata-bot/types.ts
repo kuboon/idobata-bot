@@ -38,19 +38,18 @@ export type TargetRef =
 /** One thing an opinion says about one target — "段落 3 への懸念". */
 export type Target = TargetRef & { stance: Stance };
 
-/** What a user writes: the body of an opinion and what it is about. */
+/** What a user writes: what the opinion says about what, a title, and a body. */
 export interface OpinionInput {
   /** One line, the gist. */
   title: string;
-  claim: string;
-  reason: string;
-  /** A concrete change to the text, if the opinion proposes one. */
-  suggestion?: string;
+  /** Free text; may be empty — the title and the targets can say it all. */
+  body?: string;
   /** At least one. */
   targets: Target[];
 }
 
-export type OpinionStatus = "published" | "adopted";
+/** `hidden` only ever reaches the owner's view and the author's own list. */
+export type OpinionStatus = "published" | "adopted" | "hidden";
 
 /** An opinion as the service hands it out. */
 export interface Opinion {
@@ -60,9 +59,8 @@ export interface Opinion {
   version: number;
   author: { id: string; nickname: string };
   title: string;
-  claim: string;
-  reason: string;
-  suggestion: string;
+  /** May be empty. */
+  body: string;
   targets: Target[];
   status: OpinionStatus;
   supportCount: number;
@@ -91,4 +89,36 @@ export interface OpinionList {
   opinions: Opinion[];
   /** Opinions the owner hid: counted, so they are not silently gone (docs/design.md §5). */
   hiddenCount: number;
+}
+
+/** What a document's owner can do to an opinion. Always with a reason, which is public. */
+export type ModerationAction = "hide" | "unhide";
+
+/** `POST` of a moderation. */
+export interface ModerationInput {
+  action: ModerationAction;
+  reason: string;
+}
+
+/** One moderation, as the record keeps it. */
+export interface ModerationLog {
+  id: string;
+  opinionId: string;
+  action: ModerationAction;
+  reason: string;
+  createdAt: string;
+}
+
+/** Messages the chat's pre-filter turned away, per day (UTC) and kind. Counted, never kept. */
+export interface FilterStat {
+  day: string;
+  kind: string;
+  count: number;
+}
+
+/** `GET` of a document's opinions for its owner: hidden ones too, and the record. */
+export interface OwnerView {
+  opinions: Opinion[];
+  moderation: ModerationLog[];
+  filterStats: FilterStat[];
 }

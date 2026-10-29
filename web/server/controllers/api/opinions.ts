@@ -3,7 +3,8 @@
  * is its client, and the request and response shapes are that package's types.
  *
  * Reading is open to anyone with a DPoP key (signed in, it also says which opinions are yours and
- * which you support); writing needs a signed-in user.
+ * which you support); writing needs a signed-in user. The owner's view and moderation need the
+ * document's owner.
  */
 
 import { createController } from "@remix-run/fetch-router";
@@ -15,7 +16,10 @@ import {
   getOpinionDetail,
   listMyOpinions,
   listOpinions,
+  moderateOpinion,
   OpinionError,
+  ownerView,
+  parseModerationInput,
   parseOpinionInput,
   setSupport,
   updateOpinion,
@@ -136,6 +140,28 @@ export function createOpinionsController(auth: RequireUserOptions = {}) {
               ),
             })
           ),
+      },
+      manage: {
+        middleware: signedIn,
+        handler: (context) =>
+          answer(async () =>
+            json(await ownerView(context.params.docId, userOf(context).id))
+          ),
+      },
+      moderate: {
+        middleware: signedIn,
+        handler: (context) =>
+          answer(async () => {
+            const input = parseModerationInput(
+              await readJson(context.request),
+            );
+            const opinion = await moderateOpinion(
+              context.params.opinionId,
+              userOf(context).id,
+              input,
+            );
+            return json({ opinion });
+          }),
       },
       unsupport: {
         middleware: signedIn,
