@@ -193,6 +193,11 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `web/dist` を `web/server/cf_build.ts` が Build Output Specification
   (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
   (`deno task cf ...` が `npm:cf` の実行)。
+- 本番のデプロイコマンドは `deno task deploy`（`deploy.sh`）。Worker の設定が
+  最後に Cloudflare 側で変わっていると（ダッシュボードで secret を設定した等）、
+  `cf deploy` は上書きの確認を出し、ビルドの中ではそこで止まる。`deploy.sh` は
+  疑似端末で Yes と答える（`cloudflare.config.ts` が正。上書きする差分はログに
+  出る）。
 - preview は別の D1 `idobata-bot-preview` を使う（`cloudflare.config.ts` の
   `ctx.isPreview`。`deno task build:cf --preview` が preview 用の Build Output
   を 書く）。マイグレーションは両方に当てる。preview の origin は IdP の
