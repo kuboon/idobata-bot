@@ -1,5 +1,6 @@
 {
   "workspace": [
+    "./packages/idobata-bot",
     "./web/client",
     "./web/server",
     "./web/tests"
@@ -13,7 +14,7 @@
     "db": "deno run -A jsr:@remix-kbn/data-table-d1/cli",
     "test": "deno test -P --ignore=web/tests",
     "test:browser": "deno task --cwd web/tests test",
-    "check": "deno task --cwd web/client check && deno task --cwd web/server check && deno lint && deno fmt --check"
+    "check": "deno task --cwd web/client check && deno task --cwd web/server check && deno check packages && deno lint && deno fmt --check"
   },
   "permissions": {
     "default": {

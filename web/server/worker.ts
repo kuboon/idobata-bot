@@ -19,6 +19,7 @@ import { useDatabase } from "./db/mod.ts";
 import { type AssetsBinding, serveDocumentShell } from "./document_shell.ts";
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
+import { createOpinionsController } from "./controllers/api/opinions.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
 
@@ -40,6 +41,7 @@ router.map(
 );
 router.map(routes.api.me, createMeController() as never);
 router.map(routes.api.docs, createDocsController() as never);
+router.map(routes.api.opinions, createOpinionsController() as never);
 
 /** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
 interface WorkerEnv {

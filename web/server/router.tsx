@@ -41,6 +41,7 @@ import * as NewDocument from "../client/pages/new.tsx";
 
 import { createDocsController } from "./controllers/api/docs.ts";
 import { createMeController } from "./controllers/api/me.ts";
+import { createOpinionsController } from "./controllers/api/opinions.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
 
@@ -155,6 +156,7 @@ router.map(routes, top);
 router.map(routes.api, api);
 router.map(routes.api.me, createMeController());
 router.map(routes.api.docs, createDocsController());
+router.map(routes.api.opinions, createOpinionsController());
 
 router.get("/static/*path", ({ request }) => staticFiles.fetch(request));
 router.get(`${assetsPath}/*path`, ({ request }) => assets.fetch(request));

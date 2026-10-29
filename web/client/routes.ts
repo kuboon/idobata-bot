@@ -13,7 +13,14 @@
  *   reaches them, and they are not in `entryPoints`.
  */
 
-import { get, patch, post, route } from "@remix-run/fetch-router/routes";
+import {
+  del,
+  get,
+  patch,
+  post,
+  put,
+  route,
+} from "@remix-run/fetch-router/routes";
 
 /** The `:docId` the static build writes the document page under — see `routes.document`. */
 export const DOCUMENT_SHELL_ID = "_shell";
@@ -46,6 +53,20 @@ export const routes = route("", {
       create: post("/"),
       /** `?version=n` for a version other than the latest. */
       show: get("/:docId"),
+    }),
+    /**
+     * The opinion service (③ in docs/design.md §2): opinions, their targets and supports. It knows
+     * a document only by its ID and segment keys. `packages/idobata-bot` is its client.
+     */
+    opinions: route({
+      list: get("/docs/:docId/opinions"),
+      create: post("/docs/:docId/opinions"),
+      show: get("/opinions/:opinionId"),
+      update: patch("/opinions/:opinionId"),
+      remove: del("/opinions/:opinionId"),
+      support: put("/opinions/:opinionId/support"),
+      unsupport: del("/opinions/:opinionId/support"),
+      mine: get("/me/opinions"),
     }),
   }),
 });

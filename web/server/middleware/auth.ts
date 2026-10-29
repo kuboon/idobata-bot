@@ -115,6 +115,25 @@ export interface RequireUserOptions {
 export function requireUser(
   options: RequireUserOptions = {},
 ): Middleware<{ key: typeof User; value: User }> {
+  return userMiddleware(options, true);
+}
+
+/**
+ * Like {@link requireUser}, for routes open to everyone that answer a signed-in user a little
+ * differently (whether they support an opinion, whether they wrote it). No `Authorization` header
+ * passes through with no {@link User}; a header that does not verify is still a `401`, so a
+ * stale token is refreshed rather than silently treated as signed out.
+ */
+export function optionalUser(
+  options: RequireUserOptions = {},
+): Middleware<{ key: typeof User; value: User }> {
+  return userMiddleware(options, false);
+}
+
+function userMiddleware(
+  options: RequireUserOptions,
+  required: boolean,
+): Middleware<{ key: typeof User; value: User }> {
   const { idpOrigin } = getConfig();
   const issuer = options.issuer ?? idpOrigin;
   let jwks = options.jwks;
@@ -123,9 +142,9 @@ export function requireUser(
     const client = context.get(Client) as Client | undefined;
     if (!client) throw new Error("requireUser() must run after dpopClient()");
 
-    const match = /^DPoP\s+(\S+)$/i.exec(
-      context.request.headers.get("authorization") ?? "",
-    );
+    const header = context.request.headers.get("authorization");
+    if (!header && !required) return next();
+    const match = /^DPoP\s+(\S+)$/i.exec(header ?? "");
     if (!match) return unauthorized("token: missing");
 
     jwks ??= createRemoteJWKSet(new URL("/.well-known/jwks.json", idpOrigin));
