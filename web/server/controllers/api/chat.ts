@@ -1,7 +1,7 @@
 /**
- * `POST /api/docs/:docId/chat?v=<version>&s=<segment keys>` — one turn of the AI chat about a
- * document, in `@remix-kbn/helper-agent`'s wire format (docs/design.md §6). The query fixes what
- * the conversation is about: the version and the paragraphs selected when it started. Open to
+ * `POST /api/docs/:docId/chat?v=<version>` — one turn of the AI chat about a document, in
+ * `@remix-kbn/helper-agent`'s wire format (docs/design.md §6). The query fixes the version the
+ * conversation is about; the reader's selection is read and set by the page's tools. Open to
  * anyone with a DPoP key: chatting needs no sign-in, posting what comes of it does.
  */
 
@@ -29,17 +29,13 @@ function configuredModel(): ChatModel | null {
   return anthropicApiKey ? anthropicModel(anthropicApiKey) : null;
 }
 
-/** The version and the first selection, from the query. */
-function subjectOf(url: URL): { versionNumber: number; segmentKeys: string[] } {
+/** The version the conversation is about, from the query. */
+function versionOf(url: URL): number {
   const versionNumber = Number(url.searchParams.get("v"));
-  const segmentKeys = (url.searchParams.get("s") ?? "").split(",").filter(
-    Boolean,
-  );
   if (!Number.isInteger(versionNumber) || versionNumber < 1) {
     throw new ChatError(400, "invalid v");
   }
-  if (segmentKeys.length > 200) throw new ChatError(400, "invalid s");
-  return { versionNumber, segmentKeys };
+  return versionNumber;
 }
 
 /**
@@ -54,15 +50,12 @@ export function createChatController(
     middleware: [dpopClient()],
     actions: {
       async send(context) {
-        let subject;
+        let document;
         try {
-          const { versionNumber, segmentKeys } = subjectOf(
-            new URL(context.request.url),
+          document = await chatDocument(
+            context.params.docId,
+            versionOf(new URL(context.request.url)),
           );
-          subject = {
-            document: await chatDocument(context.params.docId, versionNumber),
-            segmentKeys,
-          };
         } catch (error) {
           if (error instanceof ChatError) {
             return json({ error: error.message }, error.status);
@@ -73,7 +66,7 @@ export function createChatController(
         if (!chatModel) {
           return json({ error: "チャットは準備中です。" }, 503);
         }
-        return await helperAgentController(chatAgent(subject, chatModel), {
+        return await helperAgentController(chatAgent(document, chatModel), {
           maxMessages: HISTORY_MAX_MESSAGES,
           maxBytes: HISTORY_MAX_BYTES,
         })(context);

@@ -3,8 +3,8 @@
  *
  * The wire format is `@remix-kbn/helper-agent`'s: the browser holds the transcript, posts all of
  * it every turn, and reads the turn back as server-sent events. What is this service's own is
- * where to post it and the one tool the browser runs, `draft_opinion`, whose input is a
- * {@link ChatDraft}.
+ * where to post it and the tools the browser runs: `draft_opinion`, whose input is a
+ * {@link ChatDraft}, and the two that read and set the reader's selection.
  */
 
 import type { OpinionInput } from "./types.ts";
@@ -23,22 +23,28 @@ export const DRAFT_TOOL_NAME = "draft_opinion";
 /** The longest message a reader can send. */
 export const CHAT_MESSAGE_MAX_LENGTH = 2000;
 
+/** The tools the page runs besides {@link DRAFT_TOOL_NAME}: reading and setting the selection. */
+export const SELECTION_TOOL_NAMES = {
+  /** No input. Answers with the selected blocks. */
+  get: "get_selection",
+  /** `{ segment_indices: number[] }` — blocks of the version, from 0. */
+  set: "select_segments",
+} as const;
+
 /**
- * Where a conversation posts its turns. The version and the paragraphs selected when it started
- * are part of the URL: they make the conversation's first message, which must not change.
+ * Where a conversation posts its turns. The version is part of the URL: it makes the
+ * conversation's first message, which must not change.
  *
  * @param documentId The document
  * @param versionNumber The version the reader is looking at
- * @param segmentKeys The selected segments, by key
  * @param baseUrl The service's origin; this page's when omitted
  */
 export function chatUrl(
   documentId: string,
   versionNumber: number,
-  segmentKeys: readonly string[],
   baseUrl = "",
 ): string {
-  const query = new URLSearchParams({ v: String(versionNumber) });
-  if (segmentKeys.length > 0) query.set("s", segmentKeys.join(","));
-  return `${baseUrl}/api/docs/${encodeURIComponent(documentId)}/chat?${query}`;
+  return `${baseUrl}/api/docs/${
+    encodeURIComponent(documentId)
+  }/chat?v=${versionNumber}`;
 }

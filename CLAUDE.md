@@ -75,27 +75,29 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 ## チャット（Claude API）
 
 設計書 §6。[`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent)
-の上に作る。`POST /api/docs/:docId/chat?v=<版>&s=<段落キー,…>` が 1 ターンを
-helper-agent の形式（SSE）で返す（`controllers/api/chat.ts` が
-`helperAgentController` に `lib/chat/mod.ts` の `chatAgent` を渡す）。ログイン
-不要。
+の上に作る。`POST /api/docs/:docId/chat?v=<版>` が 1 ターンを helper-agent
+の形式（SSE）で返す（`controllers/api/chat.ts` が `helperAgentController` に
+`lib/chat/mod.ts` の `chatAgent` を渡す）。ログイン 不要。
 
-- 画面: 意見のある段落は下線。段落を選ぶと意見パネル（`opinions/panel.tsx`）に
-  「AI と対話する」が出て、右下に helper-agent のパネルが開く
-  （`opinions/assistant.ts`）。選択が変われば新しい会話。
+- 画面: 意見のある段落は下線。右下の「AI と対話」ボタンは常に出ていて、選択が
+  無くても話せる（`opinions/assistant.ts`。ページに 1 つの会話）。意見パネル
+  （`opinions/panel.tsx`）の「AI と対話する」も同じ会話を開く。
+- 選択は会話に固定しない。AI はブラウザのツール `get_selection` で読者の選択を
+  読み、`select_segments` で段落を選んで見せる（「それはこの部分ですね」）。
 - 履歴はブラウザの helper-agent のセッションだけ（メモリ。タブを閉じる・
   サインインで遷移すると消える）。assistant の `state` に API の content
   をそのまま入れて往復させ、サーバーは `block()` で検査して再生する。サーバーは
   何も保存しない。
 - `messages[0]`（文書と最初の選択）はサーバーが毎回同じバイト列で作る
-  （`lib/chat/prompt.ts`）。版と選択は URL の query で固定する。ここに変わるもの
-  （意見の一覧など）を入れない。
+  （`lib/chat/prompt.ts`）。版は URL の query
+  で固定する。選択は入れない。ここに変わるもの （意見の一覧など）を入れない。
 - 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`、`worker.ts` の
   `useAi(env.AI)`）。binding が無い（ローカル・テスト）と素通し。弾いた件数だけ
   `filter_stats` に数え、定型文を返す。
 - ツール: `search_opinions` / `get_opinion` はサーバーで回す
   （`lib/chat/tools.ts`）。段落はモデルにはブロック番号で見せる。
-  `draft_opinion` だけはブラウザのツール: サーバーが `resolveDraft` で検査して
+  `get_selection` / `select_segments` はブラウザのツール（そのまま渡す）。
+  `draft_opinion` もブラウザのツール: サーバーが `resolveDraft` で検査して
   段落キーに直した `ChatDraft` を tool-call で渡し、ブラウザが下書き入りの投稿
   ダイアログ（`opinions/post_dialog.tsx`、`opinions/compose.ts`）を開いて、
   投稿した／閉じたを結果として返す。投稿はユーザーがする。

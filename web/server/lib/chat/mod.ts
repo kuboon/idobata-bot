@@ -2,7 +2,7 @@
  * The AI chat about a document (docs/design.md §6), as an agent for `@remix-kbn/helper-agent`'s
  * controller: check the transcript the browser sent, put the reader's message through the
  * pre-filter, then run the model — and the server's tools — until it answers or asks the browser
- * to open the posting dialog (`draft_opinion`).
+ * to act on the page: read or set the selection, or open the posting dialog (`draft_opinion`).
  *
  * Nothing is stored. The browser holds the transcript and sends all of it every turn; each
  * assistant message carries the API's raw content blocks as its opaque `state`, which comes back
@@ -40,6 +40,11 @@ export const HISTORY_MAX_BYTES = 600_000;
 export const TOOL_ROUNDS_MAX = 5;
 /** The browser runs this tool: it opens the posting dialog. */
 export const DRAFT_TOOL = "draft_opinion";
+/** Tools the browser runs on the page as they are: reading and setting the selection. */
+export const PAGE_TOOLS: ReadonlySet<string> = new Set([
+  "get_selection",
+  "select_segments",
+]);
 
 /** A request the chat refuses before streaming: the HTTP status and why. */
 export class ChatError extends Error {
@@ -271,22 +276,14 @@ function channel<T>() {
   };
 }
 
-/** What a conversation is about, fixed when it starts. */
-export interface ChatSubject {
-  document: DocumentDetail;
-  /** The segments the reader had selected when it started, by key. */
-  segmentKeys: readonly string[];
-}
-
 /**
  * The agent for one conversation. Every turn ends with exactly one `done` or `error`.
  *
- * @param subject The document's version and the first selection — they make the first message,
- *   which must come out the same every turn
+ * @param document The document's version — it makes the first message, which must come out the
+ *   same every turn
  * @param model The Claude API, or a scripted stand-in
  */
-export function chatAgent(subject: ChatSubject, model: ChatModel): Agent {
-  const { document, segmentKeys } = subject;
+export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
   const context = { documentId: document.id, segments: document.segments };
 
   return {
@@ -322,9 +319,7 @@ export function chatAgent(subject: ChatSubject, model: ChatModel): Agent {
           headings: document.segments
             .filter((s) => s.kind === "heading")
             .map((s) => s.text),
-          selected: document.segments
-            .filter((s) => segmentKeys.includes(s.key))
-            .map((s) => s.text),
+          selected: [],
           recentTurns: input.messages.slice(-5, -1).map(plainText).filter(
             Boolean,
           ),
@@ -339,7 +334,7 @@ export function chatAgent(subject: ChatSubject, model: ChatModel): Agent {
       }
 
       const prefix = [
-        firstMessage(document.title, document.segments, segmentKeys),
+        firstMessage(document.title, document.segments),
         ...history,
       ];
       const added: BetaMessageParam[] = [];
@@ -399,11 +394,19 @@ export function chatAgent(subject: ChatSubject, model: ChatModel): Agent {
           return;
         }
 
-        // The server's tools run here; a valid draft goes to the browser, which opens the posting
-        // dialog and answers when the reader has posted or closed it.
+        // The server's tools run here. The page's go to the browser: the selection, and a valid
+        // draft, for which it opens the posting dialog and answers once the reader has left it.
         const results: ToolResult[] = [];
         let forBrowser = false;
         for (const call of calls) {
+          if (PAGE_TOOLS.has(call.name)) {
+            yield {
+              type: "tool-call",
+              call: { id: call.id, name: call.name, input: call.input },
+            };
+            forBrowser = true;
+            continue;
+          }
           if (call.name === DRAFT_TOOL) {
             const resolved = await resolveDraft(
               call.input as DraftInput,

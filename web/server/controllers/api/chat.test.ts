@@ -74,11 +74,18 @@ async function setup(model: ChatModel | null) {
   const keys = (document.segments as { key: string }[]).map((s) => s.key);
 
   /** A conversation, as the page holds it: the drafts it was handed, and what it answers. */
-  const session = (
-    segmentKeys = [keys[1]],
-    answer = "読者が投稿しました。",
-  ) => {
+  const session = (answer = "読者が投稿しました。") => {
     const drafts: ChatDraft[] = [];
+    const pageCalls: [string, unknown][] = [];
+    const pageTool = (name: string, result: string): ClientTool => ({
+      name,
+      description: name,
+      inputSchema: { type: "object" },
+      run(input) {
+        pageCalls.push([name, input]);
+        return result;
+      },
+    });
     const draftTool: ClientTool = {
       name: DRAFT_TOOL_NAME,
       description: "投稿ダイアログを開く",
@@ -90,7 +97,7 @@ async function setup(model: ChatModel | null) {
     };
     const chat = new HelperAgentSession({
       transport: {
-        url: appUrl(chatUrl(docId, 1, segmentKeys)),
+        url: appUrl(chatUrl(docId, 1)),
         fetch: async (request) =>
           fetch(request.url, {
             method: request.method,
@@ -98,13 +105,17 @@ async function setup(model: ChatModel | null) {
             body: await request.text(),
           }),
       },
-      tools: [draftTool],
+      tools: [
+        draftTool,
+        pageTool("get_selection", "読者は段落 1 を選んでいます。"),
+        pageTool("select_segments", "選びました。"),
+      ],
     });
-    return { chat, drafts };
+    return { chat, drafts, pageCalls };
   };
   /** Posts a transcript as is, for the ones a page would not send. */
   const post = (messages: unknown[]) =>
-    fetch(chatUrl(docId, 1, [keys[1]]), {
+    fetch(chatUrl(docId, 1), {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ messages }),
@@ -135,7 +146,7 @@ Deno.test("a turn streams the answer, with the API's blocks as its state", async
     },
   ]);
 
-  // The document goes first, one block per segment, cached; the selection with it.
+  // The document goes first, one block per segment, cached — the same for every reader.
   const [first, second] = requests[0].messages;
   assertEquals(first.role, "user");
   const [doc, selection] = first.content as never[] as {
@@ -151,7 +162,7 @@ Deno.test("a turn streams the answer, with the API's blocks as its state", async
     "本文2",
   ]);
   assertEquals(doc.cache_control, { type: "ephemeral", ttl: "1h" });
-  assert(selection.text!.includes("1"));
+  assert(selection.text!.includes("get_selection"));
   assertEquals(second as unknown, {
     role: "user",
     content: [{ type: "text", text: "この段落はどういう意味？" }],
@@ -255,6 +266,54 @@ Deno.test("search runs on the server; a draft opens in the browser and its answe
       { type: "text", text: "投稿ありがとうございました。", citations: null },
     ]),
   });
+});
+
+Deno.test("the page's tools read and set the selection in the browser", async () => {
+  const { model, requests } = scripted([
+    {
+      stop_reason: "tool_use",
+      content: [{
+        type: "tool_use",
+        id: "g1",
+        name: "get_selection",
+        input: {},
+      }],
+    },
+    {
+      stop_reason: "tool_use",
+      content: [
+        { type: "text", text: "それはこの部分ですね。", citations: null },
+        {
+          type: "tool_use",
+          id: "s1",
+          name: "select_segments",
+          input: { segment_indices: [2] },
+        },
+      ],
+    },
+    reply("この段落への意見はまだありません。"),
+  ]);
+  const { session } = await setup(model);
+  const { chat, pageCalls } = session();
+
+  await chat.send("期間が短いと思う");
+  assertEquals(chat.error, null);
+  assertEquals(pageCalls, [
+    ["get_selection", {}],
+    ["select_segments", { segment_indices: [2] }],
+  ]);
+  // Each answer went back to the model as the result of its call.
+  assertEquals(requests.length, 3);
+  assertEquals(requests[1].messages.at(-1)!.content as unknown, [{
+    type: "tool_result",
+    tool_use_id: "g1",
+    content: "読者は段落 1 を選んでいます。",
+  }]);
+  assertEquals(requests[2].messages.at(-1)!.content as unknown, [{
+    type: "tool_result",
+    tool_use_id: "s1",
+    content: "選びました。",
+  }]);
 });
 
 Deno.test("a draft that does not check out goes back to the model, not the browser", async () => {

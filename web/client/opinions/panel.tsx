@@ -4,8 +4,8 @@
  * - Nothing selected: every opinion on the document.
  * - Segments selected: the opinions about any of them.
  *
- * Under them, 「AI と対話する」 starts the chat in the corner (`assistant.ts`) about the selection,
- * and 「自分で書く」 opens the posting dialog (`post_dialog.tsx`) with the selection as its targets.
+ * Under them, 「AI と対話する」 shows the chat in the corner (`assistant.ts`), which reads the
+ * selection, and 「自分で書く」 opens the posting dialog (`post_dialog.tsx`) with the selection as its targets.
  * The AI opens the same dialog, with its draft filled in.
  */
 
@@ -242,8 +242,8 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
               </button>
               <span mix={metaStyle}>
                 {keys.size === 0
-                  ? "文書全体について話します。段落を選ぶと、その段落について話せます。"
-                  : "AI が、この段落にすでに出ている意見との関係を確かめながら、意見をまとめる手伝いをします。"}
+                  ? "AI は話の中で、関係する段落を選んで示します。"
+                  : "AI は選んだ段落を見て、すでに出ている意見との関係を確かめながら手伝います。"}
               </span>
             </div>
           )

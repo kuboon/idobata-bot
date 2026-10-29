@@ -7,7 +7,8 @@
  * (`lib/document.ts`); clicking a segment selects it. A segment with opinions about it is
  * underlined and shows how many, and the opinion panel (`opinions/panel.tsx`) opens right after the
  * last selected segment — or, with nothing selected, after the document — with those opinions and
- * the buttons to talk with the AI (`opinions/assistant.ts`, in the corner) or write one. Both end in
+ * the buttons to talk with the AI or write one. The AI chat (`opinions/assistant.ts`) is one per
+ * page, opened from the button always in the corner, and reads and sets the selection. Both end in
  * the posting dialog (`opinions/post_dialog.tsx`), which there is one of for the page.
  */
 
@@ -27,7 +28,7 @@ import {
 
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
 import type { HelperAgentPanel } from "@remix-kbn/helper-agent/client";
-import { openAssistant } from "../opinions/assistant.ts";
+import { openAssistant, type PageSelection } from "../opinions/assistant.ts";
 import { ComposeStore } from "../opinions/compose.ts";
 import { OpinionPanel } from "../opinions/panel.tsx";
 import { PostDialog } from "../opinions/post_dialog.tsx";
@@ -84,44 +85,55 @@ export const DocumentView = clientEntry(
     let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
     const compose = new ComposeStore();
-    /** The chat in the corner, and the selection it is about. */
-    let assistant: { chat: HelperAgentPanel; about: string } | null = null;
+    /** The chat in the corner — one per page, made on first use. */
+    let assistant: HelperAgentPanel | null = null;
 
-    /**
-     * Shows the chat about the current selection. A conversation about another selection is
-     * ended first — its first message cannot change — after asking, if it has begun.
-     */
+    /** The selection by block number, for the AI's tools. */
+    const pageSelection: PageSelection = {
+      current: () =>
+        (detail?.segments ?? []).flatMap((s, index) =>
+          selected.has(s.key) ? [{ index, text: s.text }] : []
+        ),
+      select(indices) {
+        const segments = detail?.segments ?? [];
+        const picked = [...new Set(indices)].sort((a, b) => a - b).map((i) => {
+          const segment = segments[i];
+          if (!segment) throw new Error(`文書ブロック ${i} はありません。`);
+          return { index: i, segment };
+        });
+        selected.clear();
+        for (const { segment } of picked) selected.add(segment.key);
+        handle.update();
+        setTimeout(() =>
+          document
+            .querySelector(`[data-segment="${picked[0].segment.key}"]`)
+            ?.scrollIntoView({ behavior: "smooth", block: "center" })
+        );
+        return picked.map(({ index, segment }) => ({
+          index,
+          text: segment.text,
+          opinions: store?.aboutSegment(segment.key).length ?? 0,
+        }));
+      },
+    };
+
+    /** Shows the chat, opening it the first time. */
     const talk = () => {
       if (!detail) return;
-      const keys = detail.segments
-        .filter((s) => selected.has(s.key))
-        .map((s) => s.key);
-      const about = keys.join(",");
-      if (assistant?.about === about) {
-        assistant.chat.show();
-        return;
-      }
-      if (assistant) {
-        if (
-          assistant.chat.session.messages.length > 0 &&
-          !confirm("いまの対話を終えて、選んだ段落について新しく始めますか？")
-        ) {
-          assistant.chat.show();
-          return;
-        }
-        assistant.chat.dispose();
-      }
-      assistant = {
-        chat: openAssistant({
+      if (assistant) assistant.show();
+      else {
+        assistant = openAssistant({
           documentId: detail.id,
           versionNumber: detail.version.number,
-          segmentKeys: keys,
           compose,
-        }),
-        about,
-      };
+          selection: pageSelection,
+        });
+        // The launcher comes back when the panel is closed.
+        assistant.dialog.addEventListener("close", () => handle.update());
+      }
+      handle.update();
     };
-    handle.signal.addEventListener("abort", () => assistant?.chat.dispose());
+    handle.signal.addEventListener("abort", () => assistant?.dispose());
 
     /**
      * A click selects that paragraph alone; Ctrl/⌘/Shift-click adds it to (or takes it out of)
@@ -271,6 +283,17 @@ export const DocumentView = clientEntry(
             })}
           </article>
           {lastSelected === null ? panel : null}
+          {detail.open && !assistant?.open
+            ? (
+              <button
+                type="button"
+                aria-label="AI と対話する"
+                mix={[launcherStyle, on("click", talk)]}
+              >
+                <span aria-hidden="true">💬</span> AI と対話
+              </button>
+            )
+            : null}
           {store
             ? (
               <PostDialog
@@ -305,6 +328,25 @@ const selectionStyle = css({
   borderRadius: radius.md,
   background: color.card,
   fontSize: "0.9rem",
+});
+
+const launcherStyle = css({
+  position: "fixed",
+  insetInlineEnd: "1rem",
+  insetBlockEnd: "1rem",
+  zIndex: 10,
+  display: "flex",
+  alignItems: "center",
+  gap: "0.4rem",
+  padding: "0.7rem 1.1rem",
+  border: "none",
+  borderRadius: "999px",
+  background: color.accent,
+  color: color.onAccent,
+  font: "inherit",
+  fontWeight: 600,
+  boxShadow: "0 0.5rem 1.5rem rgb(0 0 0 / 0.2)",
+  cursor: "pointer",
 });
 
 const countStyle = css({

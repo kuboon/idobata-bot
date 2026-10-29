@@ -3,16 +3,21 @@
  * `@remix-kbn/helper-agent` panel in a non-modal `<dialog>`, so the reader can keep reading and
  * selecting while they talk.
  *
- * The conversation is about what was selected when it started — the server builds the model's
- * first message from it, and that has to stay the same — so a different selection is a new
- * conversation. The transcript is held only by the panel's session: closing the tab ends it.
+ * One conversation per page, about the version. The selection is the reader's and changes
+ * while they talk, so the AI reads it (`get_selection`) and sets it (`select_segments` — "that is
+ * this part, isn't it?") with tools that run here. The transcript is held only by the panel's
+ * session: closing the tab ends it.
  *
- * The one tool this page runs is `draft_opinion`: it opens the posting dialog with the AI's draft
- * (or its suggestion to support an existing opinion), waits for the reader, and tells the AI how
- * it went.
+ * `draft_opinion` runs here too: it opens the posting dialog with the AI's draft (or its
+ * suggestion to support an existing opinion), waits for the reader, and tells the AI how it went.
  */
 
-import { type ChatDraft, chatUrl, DRAFT_TOOL_NAME } from "@kuboon/idobata-bot";
+import {
+  type ChatDraft,
+  chatUrl,
+  DRAFT_TOOL_NAME,
+  SELECTION_TOOL_NAMES,
+} from "@kuboon/idobata-bot";
 import {
   type ClientTool,
   type HelperAgentPanel,
@@ -23,13 +28,35 @@ import { sessionStore } from "../session.ts";
 import { color, radius } from "../tokens.ts";
 import type { ComposeOutcome, ComposeStore } from "./compose.ts";
 
+/** A block of the version as the AI sees it: its number, from 0, and its text. */
+export interface Block {
+  index: number;
+  text: string;
+}
+
+/** The reader's selection, which the AI reads and sets by block number. */
+export interface PageSelection {
+  /** The selected blocks, in document order. */
+  current(): Block[];
+  /**
+   * Selects these blocks instead, and scrolls to them.
+   *
+   * @returns Each block with how many opinions the page now shows for it
+   * @throws When a number is not a block of the version
+   */
+  select(indices: readonly number[]): (Block & { opinions: number })[];
+}
+
 export interface AssistantOptions {
   documentId: string;
   versionNumber: number;
-  /** The selected segments, by key, in document order. */
-  segmentKeys: readonly string[];
   compose: ComposeStore;
+  selection: PageSelection;
 }
+
+/** A block's start, enough for the AI to tell which it is. */
+const excerpt = (text: string) =>
+  text.length > 60 ? `${text.slice(0, 60)}…` : text;
 
 /** What the AI reads back once the reader has left the dialog. */
 function outcomeText(outcome: ComposeOutcome): string {
@@ -66,17 +93,64 @@ function draftTool(compose: ComposeStore): ClientTool {
   };
 }
 
-/** Opens the chat in the corner. Call `dispose()` on the handle to end the conversation. */
+/** `get_selection` and `select_segments`: the AI pointing at the document, on the reader's screen. */
+function selectionTools(selection: PageSelection): ClientTool[] {
+  return [
+    {
+      name: SELECTION_TOOL_NAMES.get,
+      description: "読者が選んでいる段落",
+      inputSchema: { type: "object" },
+      run() {
+        const blocks = selection.current();
+        return blocks.length === 0
+          ? "読者は段落を選んでいません。"
+          : JSON.stringify({
+            selected: blocks.map((b) => ({
+              segment_index: b.index,
+              text: excerpt(b.text),
+            })),
+          });
+      },
+    },
+    {
+      name: SELECTION_TOOL_NAMES.set,
+      description: "読者の画面で段落を選ぶ",
+      inputSchema: { type: "object" },
+      run(input) {
+        const indices = (input as { segment_indices?: unknown })
+          ?.segment_indices;
+        if (
+          !Array.isArray(indices) || indices.length === 0 ||
+          !indices.every(Number.isInteger)
+        ) throw new Error("segment_indices に段落の番号を 1 つ以上ください。");
+        const blocks = selection.select(indices);
+        return JSON.stringify({
+          message:
+            "読者の画面でこの段落を選び、スクロールしました。段落の下に、その段落への意見が表示されています。",
+          selected: blocks.map((b) => ({
+            segment_index: b.index,
+            text: excerpt(b.text),
+            opinions_shown: b.opinions,
+          })),
+        });
+      },
+    },
+  ];
+}
+
+/**
+ * Opens the chat in the corner. There is one per page: it is about the version, and follows the
+ * selection through its tools rather than being tied to one.
+ */
 export function openAssistant(options: AssistantOptions): HelperAgentPanel {
-  const { documentId, versionNumber, segmentKeys, compose } = options;
+  const { documentId, versionNumber, compose, selection } = options;
   const chat = openHelperAgent({
     title: "AI と対話",
-    greeting: segmentKeys.length === 0
-      ? "この文書について、気になること・ご意見をお聞かせください。"
-      : "選んだ段落について、気になること・ご意見をお聞かせください。この段落にすでに出ている意見も踏まえてお手伝いします。",
+    greeting:
+      "この文書について、気になること・ご意見をお聞かせください。段落を選んでから話しかけると、その段落について、すでに出ている意見も踏まえてお手伝いします。",
     placeholder: "メッセージ",
     transport: {
-      url: chatUrl(documentId, versionNumber, segmentKeys),
+      url: chatUrl(documentId, versionNumber),
       // Signed with the page's DPoP key, like every API call.
       fetch: async (request) =>
         sessionStore.apiFetch(request.url, {
@@ -86,7 +160,7 @@ export function openAssistant(options: AssistantOptions): HelperAgentPanel {
           signal: request.signal,
         }),
     },
-    tools: [draftTool(compose)],
+    tools: [draftTool(compose), ...selectionTools(selection)],
   });
   const style = chat.dialog.style;
   style.setProperty("--chat-panel-bg", color.bg);
