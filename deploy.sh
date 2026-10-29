@@ -9,13 +9,17 @@
 # unread.
 set -euo pipefail
 
+# The deno to run cf with: the task passes the one it runs on. A build may not have deno on PATH
+# (Cloudflare's runs it as ~/.deno/bin/deno), and `script` starts a fresh shell that only has PATH.
+deno=${1:?usage: deploy.sh <path to deno>}
+
 answer=$(mktemp -u)
 mkfifo "$answer"
 trap 'rm -f "$answer"' EXIT
 
 # The answer waits in the terminal until cf asks; the fifo keeps the terminal's input open until
 # the deploy is done.
-CI=false script -qefc "deno run -A npm:cf deploy --prebuilt" /dev/null < "$answer" &
+CI=false script -qefc "'$deno' run -A npm:cf deploy --prebuilt" /dev/null < "$answer" &
 deploy=$!
 exec 3> "$answer"
 printf 'y\r' >&3

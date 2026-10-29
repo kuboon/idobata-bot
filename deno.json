@@ -11,7 +11,7 @@
     "build": "deno task --cwd web/server build",
     "build:cf": "deno task --cwd web/server build:cf",
     "cf": "deno run -A npm:cf",
-    "deploy": "bash deploy.sh",
+    "deploy": "bash deploy.sh \"$(deno eval 'console.log(Deno.execPath())')\"",
     "deploy:preview": "deno task build:cf --preview && deno run -A npm:cf previews deploy --prebuilt",
     "db": "deno run -A jsr:@remix-kbn/data-table-d1/cli",
     "test": "deno test -P --ignore=web/tests",
