@@ -135,3 +135,22 @@
     font-feature-settings: normal;
   }
 }
+
+/*
+ * Mermaid diagrams in documents, drawn by Pele (through `@kuboon/md`). Pele takes its colours from
+ * these custom properties, so the diagram follows the site's light and dark palettes instead of
+ * staying a white card in dark mode.
+ */
+@layer app {
+  .mermaid-diagram svg {
+    --pele-bg: var(--bg);
+    --pele-fg: var(--fg);
+    --pele-muted: var(--muted);
+    --pele-line: var(--fg);
+    --pele-accent: var(--accent);
+    --pele-border: var(--border);
+    --pele-surface: var(--card);
+    --pele-font: var(--font-sans);
+    --pele-font-mono: var(--font-mono);
+  }
+}

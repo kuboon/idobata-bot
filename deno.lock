@@ -3,7 +3,7 @@
   "specifiers": {
     "jsr:@deno/loader@0.5": "0.5.0",
     "jsr:@kuboon/dpop@~0.1.2": "0.1.2",
-    "jsr:@kuboon/md@0.8": "0.8.0",
+    "jsr:@kuboon/md@0.9": "0.9.0",
     "jsr:@panva/jose@^6.2.3": "6.2.12",
     "jsr:@remix-kbn/assets-deno@0.9": "0.9.0",
     "jsr:@remix-kbn/data-table-d1@*": "0.1.0",
@@ -28,7 +28,6 @@
     "npm:@remix-run/render-middleware@^1.0.1": "1.0.1_@emnapi+core@1.11.2_@emnapi+runtime@1.11.3",
     "npm:@types/hast@^3.0.5": "3.0.5",
     "npm:@types/mdast@^4.0.4": "4.0.4",
-    "npm:beautiful-mermaid@^1.1.3": "1.1.3",
     "npm:canvaskit-wasm@0.40": "0.40.0",
     "npm:cf@*": "0.15.0",
     "npm:cf@1.0.0-beta.16": "1.0.0-beta.16",
@@ -39,6 +38,7 @@
     "npm:hast-util-sanitize@^5.0.2": "5.0.2",
     "npm:hast-util-to-dom@^4.0.1": "4.0.1",
     "npm:hast-util-to-html@^9.0.5": "9.0.5",
+    "npm:pele@^1.12.0": "1.12.0",
     "npm:puppeteer-core@^23.11.1": "23.11.1",
     "npm:rehype-autolink-headings@^7.1.0": "7.1.0",
     "npm:rehype-sanitize@6": "6.0.0",
@@ -59,16 +59,16 @@
         "jsr:@std/encoding"
       ]
     },
-    "@kuboon/md@0.8.0": {
-      "integrity": "6c91fc30cfa63ef0f91c980cac9990acf0d756ef97acacdd52be2ec4dffa4109",
+    "@kuboon/md@0.9.0": {
+      "integrity": "1636cd18ff1f65e63b5a76dd2933cd68f909e0847016e207646ed91b31a84a07",
       "dependencies": [
         "npm:@types/hast",
         "npm:@types/mdast",
-        "npm:beautiful-mermaid",
         "npm:hast-util-from-html-isomorphic",
         "npm:hast-util-sanitize",
         "npm:hast-util-to-dom",
         "npm:hast-util-to-html",
+        "npm:pele",
         "npm:rehype-autolink-headings",
         "npm:rehype-sanitize",
         "npm:rehype-slug",
@@ -1320,13 +1320,6 @@
     "basic-ftp@5.3.0": {
       "integrity": "sha512-5K9eNNn7ywHPsYnFwjKgYH8Hf8B5emh7JKcPaVjjrMJFQQwGpwowEnZNEtHs7DfR7hCZsmaK3VA4HUK0YarT+w=="
     },
-    "beautiful-mermaid@1.1.3": {
-      "integrity": "sha512-TItrtrAyHp1vwFfFVYauWGrquouk/6SS21Aq3RsxindSYZODcN4xYrPZD6BiZRU+o5mKJzDPz9MUSMvELdylyg==",
-      "dependencies": [
-        "elkjs",
-        "entities@7.0.1"
-      ]
-    },
     "blake3-wasm@2.1.5": {
       "integrity": "sha512-F1+K8EbfOZE49dtoPtmxUQrpXaBIl3ICvasLh+nJta0xkz+9kF/7uet9fLnwKqhDrmj6g+6K3Tw9yQPUg2ka5g=="
     },
@@ -1468,9 +1461,6 @@
     "devtools-protocol@0.0.1367902": {
       "integrity": "sha512-XxtPuC3PGakY6PD7dG66/o8KwJ/LkH2/EKe19Dcw58w53dv4/vSQEkn/SzuyhHE2q4zPgCkxQBxus3VV4ql+Pg=="
     },
-    "elkjs@0.11.1": {
-      "integrity": "sha512-zxxR9k+rx5ktMwT/FwyLdPCrq7xN6e4VGGHH8hA01vVYKjTFik7nHOxBnAYtrgYUB1RpAiLvA1/U2YraWxyKKg=="
-    },
     "emoji-regex@10.6.0": {
       "integrity": "sha512-toUI84YS5YmxW219erniWD0CIVOo46xGKColeNQRgOzDorgBi1v4D71/OFzgD9GO2UGKIv1C3Sp8DAn0+j5w7A=="
     },
@@ -1485,9 +1475,6 @@
     },
     "entities@6.0.1": {
       "integrity": "sha512-aN97NXWF6AWBTahfVOIrB/NShkzi5H7F9r1s9mD3cDj4Ko5f2qhhVoYMibXF7GlLveb/D2ioWay8lxI97Ven3g=="
-    },
-    "entities@7.0.1": {
-      "integrity": "sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA=="
     },
     "error-stack-parser-es@1.0.5": {
       "integrity": "sha512-5qucVt2XcuGMcEGgWI7i+yZpmpByQ8J1lHhcL7PwqCwu9FPP3VUXzT4ltHe5i2z9dePwEHcDVOAfSnHsOlCXRA=="
@@ -2369,8 +2356,11 @@
     "parse5@7.3.0": {
       "integrity": "sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==",
       "dependencies": [
-        "entities@6.0.1"
+        "entities"
       ]
+    },
+    "pele@1.12.0": {
+      "integrity": "sha512-3OdOK6rvkaTB569R4/I8U0H82MqPRxj7vfkbowa2rRhgSBPFhvWlfFy5eae0jP+2A6hE8abE17nsdyxJz2VBiQ=="
     },
     "pend@1.2.0": {
       "integrity": "sha512-F3asv42UuXchdzt+xXqfW1OGlVBe+mxa2mqI0pg5yAHZPvFmY3Y6drSf/GQ1A86WgWEN9Kzh/WrgKa6iGcHXLg=="
@@ -2916,7 +2906,7 @@
   "workspace": {
     "dependencies": [
       "jsr:@kuboon/dpop@~0.1.2",
-      "jsr:@kuboon/md@0.8",
+      "jsr:@kuboon/md@0.9",
       "jsr:@panva/jose@^6.2.3",
       "jsr:@remix-kbn/assets-deno@0.9",
       "jsr:@remix-kbn/data-table-d1@0.1",
