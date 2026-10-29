@@ -17,11 +17,13 @@ export default defineConfig((ctx) => ({
   accountId: "ac92f36f0a2d84353b137574157f7480",
   worker: {
     name: "idobata-bot",
-    compatibilityDate: "2026-10-01",
+    compatibilityDate: "2026-10-29",
     entrypoint: "./web/worker-dist/worker.js",
     // `<preview>-idobata-bot.<subdomain>.workers.dev` for each PR's preview (preview.yml); off
     // by default, and without it a preview deploys with no URL.
     previewUrls: true,
+    // Workers Logs, as the dashboard turned on when it created the Worker.
+    observability: { enabled: true, logs: { enabled: true } },
     assets: {
       htmlHandling: "auto-trailing-slash",
       notFoundHandling: "none",

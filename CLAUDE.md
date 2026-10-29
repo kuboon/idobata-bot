@@ -190,6 +190,10 @@ Deno で catch 不能なエラーになる)。env は top-level await
   `web/dist` を `web/server/cf_build.ts` が Build Output Specification
   (`.cloudflare/output/v0`) に並べ、`cf deploy --prebuilt` でアップロードする
   (`deno task cf ...` が `npm:cf` の実行)。
+- Worker の設定が最後にダッシュボードで変わっていると（ダッシュボードで作った・
+  編集した）、`cf deploy` は上書きの確認を出し、CI ではそこで止まる。手動の
+  `.github/workflows/cloudflare-adopt.yml` が疑似端末で Yes と答えてデプロイ
+  する（上書きする差分はログに出る）。一度通れば通常のデプロイに戻る。
 - main への PR には Worker Preview（`.github/workflows/preview.yml`）。
   `deno task build:cf --preview` が preview 用の Build Output を書き、
   `cf previews deploy pr-<番号> --prebuilt` で出す（URL は job summary）。PR を
