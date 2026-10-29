@@ -39,6 +39,9 @@ jobs:
           # As in cloudflare.yml: a 403 then names the refused endpoint.
           DEBUG: "1"
           WRANGLER_LOG: debug
+          # Temporary: print the 403's response body (its error code). The
+          # token in the request headers is masked by Actions as ***.
+          WRANGLER_LOG_SANITIZE: "false"
         run: |
           set -o pipefail
           deno task cf previews deploy "pr-${{ github.event.pull_request.number }}" --prebuilt \
