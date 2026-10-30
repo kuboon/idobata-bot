@@ -9,7 +9,6 @@ import { createController } from "@remix-run/fetch-router";
 import { helperAgentController } from "@remix-kbn/helper-agent/controller";
 
 import { routes } from "../../../client/routes.ts";
-import { getConfig } from "../../config.ts";
 import {
   chatAgent,
   chatDocument,
@@ -17,16 +16,17 @@ import {
   HISTORY_MAX_BYTES,
   HISTORY_MAX_MESSAGES,
 } from "../../lib/chat/mod.ts";
-import { anthropicModel, type ChatModel } from "../../lib/chat/model.ts";
+import { getAi } from "../../lib/chat/ai.ts";
+import { type ChatModel, workersAiModel } from "../../lib/chat/model.ts";
 import { dpopClient } from "../../middleware/auth.ts";
 
 const json = (body: unknown, status: number) =>
   Response.json(body, { status, headers: { "cache-control": "no-store" } });
 
-/** The Claude API with the configured key, or `null` when there is none. */
+/** The model on Workers AI, or `null` without the binding (locally, in tests). */
 function configuredModel(): ChatModel | null {
-  const { anthropicApiKey } = getConfig();
-  return anthropicApiKey ? anthropicModel(anthropicApiKey) : null;
+  const ai = getAi();
+  return ai ? workersAiModel(ai) : null;
 }
 
 /** The version the conversation is about, from the query. */

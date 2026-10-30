@@ -1,29 +1,24 @@
 /**
- * What the model is given: the system prompt, the tools, and the first message — the document.
+ * What the model is given: the system message — the instructions, then the document — and the
+ * tools.
  *
- * The first message is rebuilt on the server every turn and must come out byte for byte the same
- * each time: it is the cached prefix every reader of this version shares, and the browser's
- * history (turns 2 onwards) sits on top of it — an earlier turn that changed would invalidate the
- * thinking blocks after it. So it holds only what is fixed for the conversation: the version's
- * segments. What changes while the reader talks is looked up instead — the opinions with
- * `search_opinions`, the reader's selection with `get_selection` (docs/architecture.md §5).
+ * The system message is rebuilt on the server every turn and must come out byte for byte the same
+ * each time: it is the prefix every reader of this version shares, which Workers AI can serve from
+ * its cache, and the browser's history sits on top of it. So it holds only what is fixed for the
+ * conversation: the version's segments, numbered as blocks. What changes while the reader talks
+ * is looked up instead — the opinions with `search_opinions`, the reader's selection with
+ * `get_selection` (docs/architecture.md §5).
  */
 
-import type {
-  BetaContentBlockParam,
-  BetaMessageParam,
-  BetaTextBlockParam,
-  BetaToolUnion,
-} from "@anthropic-ai/sdk/resources/beta/messages/messages";
-
 import type { SegmentView } from "../documents.ts";
+import type { ModelTool } from "./model.ts";
 
 export const SYSTEM_PROMPT =
   `あなたは「idobata-bot」です。公開された文書について読者と対話し、読者の意見を聞き出して、定型の意見として投稿できる形にまとめる手伝いをします。
 
 ## 文書について
-- 最初のメッセージに文書があります。文書は段落ごとのブロックに分かれています。
-- 文書の内容を説明するときは、根拠の段落を引用してください。
+- このメッセージの最後に文書があります。文書は段落ごとのブロックに分かれ、[0] から番号が振ってあります。ツールで段落を指すときはこの番号を使います。
+- 文書の内容を説明するときは、根拠の段落を短く引用してください。
 - 文書に書かれていないことは推測で断定しないでください。
 
 ## 意見の聞き出し方
@@ -52,13 +47,12 @@ export const SYSTEM_PROMPT =
 - 文書と関係のない話題（翻訳、作文、プログラミング、雑談など）には応じず、文書の話に戻してください。
 - 日本語で、簡潔に答えてください。`;
 
-export const TOOLS: BetaToolUnion[] = [
+const TOOL_DEFS: ModelTool["function"][] = [
   {
     name: "search_opinions",
     description:
       "この文書にすでに投稿されている意見を探す。似た意見が出ていないか確かめるときに使う。",
-    strict: true,
-    input_schema: {
+    parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
@@ -79,8 +73,7 @@ export const TOOLS: BetaToolUnion[] = [
   {
     name: "get_opinion",
     description: "意見を一つ、本文と、それに応答した意見ごと読む。",
-    strict: true,
-    input_schema: {
+    parameters: {
       type: "object",
       additionalProperties: false,
       properties: { opinion_id: { type: "string" } },
@@ -91,8 +84,7 @@ export const TOOLS: BetaToolUnion[] = [
     name: "get_selection",
     description:
       "読者が画面で今選んでいる段落（文書ブロックの番号と冒頭）を返す。読者が画面上の場所を指したときに使う。",
-    strict: true,
-    input_schema: {
+    parameters: {
       type: "object",
       additionalProperties: false,
       properties: {},
@@ -103,8 +95,7 @@ export const TOOLS: BetaToolUnion[] = [
     name: "select_segments",
     description:
       "読者の画面で段落を選び、そこへスクロールする。読者の話が文書のどの部分のことかを示して確かめるときに使う。選んだ段落の下に、その段落への既存の意見が表示される。",
-    strict: true,
-    input_schema: {
+    parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
@@ -121,8 +112,7 @@ export const TOOLS: BetaToolUnion[] = [
     name: "draft_opinion",
     description:
       "読者の画面に、下書きを記入済みの投稿ダイアログ（または既存の意見への賛同の確認）を開く。投稿はしない。読者が内容を確かめて自分で投稿し、その結果（投稿した・閉じた）が返る。",
-    strict: true,
-    input_schema: {
+    parameters: {
       type: "object",
       additionalProperties: false,
       properties: {
@@ -193,38 +183,26 @@ export const TOOLS: BetaToolUnion[] = [
   },
 ];
 
-/** The system prompt as a cached block: it never changes, so it is the start of every prefix. */
-export function systemBlocks(): BetaTextBlockParam[] {
-  return [{ type: "text", text: SYSTEM_PROMPT }];
-}
+/** The tools, as the model is offered them. */
+export const TOOLS: ModelTool[] = TOOL_DEFS.map((fn) => ({
+  type: "function",
+  function: fn,
+}));
 
 /**
- * The conversation's first message: the document, one content block per segment, citations on,
- * cached for an hour. The same for every reader of the version.
+ * The system message: the instructions, then the document's blocks, numbered from 0. The same for
+ * every reader of the version.
  *
  * @param title The document's title
  * @param segments The version's segments, in order — block `i` is `segments[i]`
  */
-export function firstMessage(
+export function systemMessage(
   title: string,
   segments: readonly SegmentView[],
-): BetaMessageParam {
-  const content: BetaContentBlockParam[] = [
-    {
-      type: "document",
-      title,
-      source: {
-        type: "content",
-        content: segments.map((s) => ({ type: "text" as const, text: s.text })),
-      },
-      citations: { enabled: true },
-      cache_control: { type: "ephemeral", ttl: "1h" },
-    },
-    {
-      type: "text",
-      text:
-        "上が対話の対象の文書です。読者が選んでいる段落は get_selection で確かめられます。",
-    },
-  ];
-  return { role: "user", content };
+): { role: "system"; content: string } {
+  const blocks = segments.map((s, i) => `[${i}]\n${s.text}`).join("\n\n");
+  return {
+    role: "system",
+    content: `${SYSTEM_PROMPT}\n\n# 文書「${title}」\n\n${blocks}`,
+  };
 }

@@ -40,9 +40,8 @@ export default defineConfig((ctx) => ({
       // — could never go through, as no secret can be set on a Worker that does not exist yet.
       // A deploy keeps the Worker's secrets either way, and the code runs without them (see
       // web/server/config.ts). RP_SIGNING_KEY_JWK comes from the manual workflow
-      // `.github/workflows/rp-signing-key.yml`; ANTHROPIC_API_KEY (the chat's Claude API key)
-      // is set in the dashboard or with `cf workers secrets update`.
-      // Workers AI, for the chat's pre-filter (Clef).
+      // `.github/workflows/rp-signing-key.yml`.
+      // Workers AI: the chat's model (qwen3.8-27b) and its pre-filter (Clef).
       AI: bindings.ai(),
       // Migrated ahead of a deploy with `deno task db migrate --remote` (needs
       // CLOUDFLARE_D1_DATABASE_ID and a token with D1 edit permission). Pinned by ID as well

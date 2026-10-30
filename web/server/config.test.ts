@@ -13,13 +13,11 @@ Deno.test("loadConfig: env の値をそのまま反映する", () => {
     IDP_ORIGIN: "http://localhost:8000",
     RP_ORIGIN: "https://rp.example.com",
     RP_SIGNING_KEY_JWK: "{}",
-    ANTHROPIC_API_KEY: "sk-test",
   });
   assertEquals(config, {
     idpOrigin: "http://localhost:8000",
     rpOrigin: "https://rp.example.com",
     rpSigningKeyJwk: "{}",
-    anthropicApiKey: "sk-test",
   });
 });
 
@@ -28,5 +26,4 @@ Deno.test("loadConfig: 空の env はデフォルトにフォールバックす�
   assertEquals(config.idpOrigin, "https://id.kbn.one");
   assertEquals(config.rpOrigin, "");
   assertEquals(config.rpSigningKeyJwk, "");
-  assertEquals(config.anthropicApiKey, "");
 });

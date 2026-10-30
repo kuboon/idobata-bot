@@ -11,35 +11,57 @@ import {
   type ClientTool,
   HelperAgentSession,
 } from "@remix-kbn/helper-agent/client";
-import type { BetaMessage } from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 import { routes } from "../../../client/routes.ts";
 import { openLocalDatabase } from "../../db/local.ts";
 import { filterStats } from "../../db/schema.ts";
 import { REJECTED_MESSAGE } from "../../lib/chat/mod.ts";
 import { useAi } from "../../lib/chat/filter.ts";
-import type { ChatModel, ModelRequest } from "../../lib/chat/model.ts";
+import type {
+  ChatModel,
+  ModelReply,
+  ModelRequest,
+} from "../../lib/chat/model.ts";
 import { appUrl, dpopClientFor, fakeIdp } from "../../testing/auth.ts";
 import { createChatController } from "./chat.ts";
 import { createDocsController } from "./docs.ts";
 import { createOpinionsController } from "./opinions.ts";
 
-/** A model that answers with the given messages in turn and records what it was asked. */
-function scripted(replies: Partial<BetaMessage>[]) {
+/** A model that answers with the given replies in turn and records what it was asked. */
+function scripted(replies: ModelReply[]) {
   const requests: ModelRequest[] = [];
   const model: ChatModel = {
     run(request, onText) {
       requests.push(structuredClone(request));
       const reply = replies.shift();
       if (!reply) throw new Error("no more replies");
-      for (const b of reply.content ?? []) {
-        if (b.type === "text") onText(b.text);
-      }
-      return Promise.resolve(reply as BetaMessage);
+      if (reply.content) onText(reply.content);
+      return Promise.resolve(reply);
     },
   };
   return { model, requests };
 }
+
+/** A reply that ends the turn. */
+const reply = (content: string): ModelReply => ({
+  content,
+  toolCalls: [],
+  finishReason: "stop",
+});
+
+/** A reply that calls tools. */
+const calling = (
+  content: string,
+  ...calls: [id: string, name: string, args: unknown][]
+): ModelReply => ({
+  content,
+  toolCalls: calls.map(([id, name, args]) => ({
+    id,
+    name,
+    arguments: JSON.stringify(args),
+  })),
+  finishReason: "tool_calls",
+});
 
 async function setup(model: ChatModel | null) {
   const db = await openLocalDatabase(":memory:");
@@ -123,12 +145,7 @@ async function setup(model: ChatModel | null) {
   return { db, docId, keys, session, post };
 }
 
-const reply = (text: string): Partial<BetaMessage> => ({
-  stop_reason: "end_turn",
-  content: [{ type: "text", text, citations: null }],
-});
-
-Deno.test("a turn streams the answer, with the API's blocks as its state", async () => {
+Deno.test("a turn streams the answer, with the model's message as its state", async () => {
   const { model, requests } = scripted([reply("こんにちは")]);
   const { session } = await setup(model);
   const { chat } = session();
@@ -140,36 +157,29 @@ Deno.test("a turn streams the answer, with the API's blocks as its state", async
     {
       role: "assistant",
       content: "こんにちは",
-      state: JSON.stringify([
-        { type: "text", text: "こんにちは", citations: null },
-      ]),
+      state: JSON.stringify({ role: "assistant", content: "こんにちは" }),
     },
   ]);
 
-  // The document goes first, one block per segment, cached — the same for every reader.
-  const [first, second] = requests[0].messages;
-  assertEquals(first.role, "user");
-  const [doc, selection] = first.content as never[] as {
-    type: string;
-    source?: { content: { text: string }[] };
-    cache_control?: unknown;
-    text?: string;
-  }[];
-  assertEquals(doc.type, "document");
-  assertEquals(doc.source!.content.map((b) => b.text), [
-    "# 題",
-    "本文1",
-    "本文2",
-  ]);
-  assertEquals(doc.cache_control, { type: "ephemeral", ttl: "1h" });
-  assert(selection.text!.includes("get_selection"));
-  assertEquals(second as unknown, {
-    role: "user",
-    content: [{ type: "text", text: "この段落はどういう意味？" }],
-  });
+  // The system message first: the instructions, then every block, numbered.
+  const [system, second] = requests[0].messages;
+  assertEquals(system.role, "system");
+  assert(system.content.includes("# 文書「計画案」"));
+  assert(system.content.endsWith("[0]\n# 題\n\n[1]\n本文1\n\n[2]\n本文2"));
+  assertEquals(second, { role: "user", content: "この段落はどういう意味？" });
+  assertEquals(
+    requests[0].tools.map((t) => t.function.name),
+    [
+      "search_opinions",
+      "get_opinion",
+      "get_selection",
+      "select_segments",
+      "draft_opinion",
+    ],
+  );
 });
 
-Deno.test("the first message is the same bytes every turn", async () => {
+Deno.test("the system message is the same bytes every turn", async () => {
   const { model, requests } = scripted([reply("一"), reply("二")]);
   const { session } = await setup(model);
   const { chat } = session();
@@ -181,48 +191,33 @@ Deno.test("the first message is the same bytes every turn", async () => {
     JSON.stringify(requests[1].messages[0]),
     JSON.stringify(requests[0].messages[0]),
   );
-  // The document, then 最初, the answer replayed from its state, and 次.
-  assertEquals(requests[1].messages.length, 4);
-  assertEquals(
-    requests[1].messages[2].content,
-    [{ type: "text", text: "一" }] as never,
-  );
+  // The system message, then 最初, the answer replayed from its state, and 次.
+  assertEquals(requests[1].messages.slice(1), [
+    { role: "user", content: "最初" },
+    { role: "assistant", content: "一" },
+    { role: "user", content: "次" },
+  ]);
 });
 
 Deno.test("search runs on the server; a draft opens in the browser and its answer goes back", async () => {
   const { model, requests } = scripted([
-    {
-      stop_reason: "tool_use",
-      content: [
-        { type: "text", text: "この段落の意見を見ます。", citations: null },
-        {
-          type: "tool_use",
-          id: "t1",
-          name: "search_opinions",
-          input: { query: "", segment_indices: [1] },
-        },
-      ],
-    },
-    {
-      stop_reason: "tool_use",
-      content: [{
-        type: "tool_use",
-        id: "t2",
-        name: "draft_opinion",
-        input: {
-          type: "opinion",
-          support_opinion_id: "",
-          title: "予算の根拠",
-          body: "根拠を示すべき。妥当か判断できない。",
-          targets: [{
-            kind: "segment",
-            segment_index: 1,
-            opinion_id: "",
-            stance: "question",
-          }],
-        },
+    calling("この段落の意見を見ます。", [
+      "t1",
+      "search_opinions",
+      { query: "", segment_indices: [1] },
+    ]),
+    calling("", ["t2", "draft_opinion", {
+      type: "opinion",
+      support_opinion_id: "",
+      title: "予算の根拠",
+      body: "根拠を示すべき。妥当か判断できない。",
+      targets: [{
+        kind: "segment",
+        segment_index: 1,
+        opinion_id: "",
+        stance: "question",
       }],
-    },
+    }]),
     reply("投稿ありがとうございました。"),
   ]);
   const { session, keys } = await setup(model);
@@ -243,50 +238,46 @@ Deno.test("search runs on the server; a draft opens in the browser and its answe
 
   // The search's result went back to the model inside the first request.
   const toolTurn = requests[1].messages.at(-1)!;
-  assertEquals(toolTurn.role, "user");
-  const [result] = toolTurn.content as { type: string; tool_use_id: string }[];
-  assertEquals([result.type, result.tool_use_id], ["tool_result", "t1"]);
+  assertEquals(toolTurn.role, "tool");
+  assertEquals((toolTurn as { tool_call_id: string }).tool_call_id, "t1");
 
-  // The browser's answer went back in a second request, after the replayed turn.
+  // The browser's answer went back in a second request, after the replayed turn — with the
+  // model's own arguments, not the draft the browser was handed.
   assertEquals(requests.length, 3);
-  const answered = requests[2].messages.at(-1)!;
-  assertEquals(answered.content as unknown, [{
-    type: "tool_result",
-    tool_use_id: "t2",
+  const replayed = requests[2].messages.at(-2)!;
+  assertEquals(
+    (replayed as { tool_calls: { function: { arguments: string } }[] })
+      .tool_calls[0].function.arguments,
+    JSON.stringify({
+      type: "opinion",
+      support_opinion_id: "",
+      title: "予算の根拠",
+      body: "根拠を示すべき。妥当か判断できない。",
+      targets: [{
+        kind: "segment",
+        segment_index: 1,
+        opinion_id: "",
+        stance: "question",
+      }],
+    }),
+  );
+  assertEquals(requests[2].messages.at(-1), {
+    role: "tool",
+    tool_call_id: "t2",
     content: "読者が投稿しました。",
-  }]);
-  assertEquals(chat.messages.at(-1), {
-    role: "assistant",
-    content: "投稿ありがとうございました。",
-    state: JSON.stringify([
-      { type: "text", text: "投稿ありがとうございました。", citations: null },
-    ]),
   });
+  assertEquals(
+    (chat.messages.at(-1) as { content: string }).content,
+    "投稿ありがとうございました。",
+  );
 });
 
 Deno.test("the page's tools read and set the selection in the browser", async () => {
   const { model, requests } = scripted([
-    {
-      stop_reason: "tool_use",
-      content: [{
-        type: "tool_use",
-        id: "g1",
-        name: "get_selection",
-        input: {},
-      }],
-    },
-    {
-      stop_reason: "tool_use",
-      content: [
-        { type: "text", text: "それはこの部分ですね。", citations: null },
-        {
-          type: "tool_use",
-          id: "s1",
-          name: "select_segments",
-          input: { segment_indices: [2] },
-        },
-      ],
-    },
+    calling("", ["g1", "get_selection", {}]),
+    calling("それはこの部分ですね。", ["s1", "select_segments", {
+      segment_indices: [2],
+    }]),
     reply("この段落への意見はまだありません。"),
   ]);
   const { session } = await setup(model);
@@ -298,41 +289,43 @@ Deno.test("the page's tools read and set the selection in the browser", async ()
     ["get_selection", {}],
     ["select_segments", { segment_indices: [2] }],
   ]);
-  // Each answer went back to the model as the result of its call.
   assertEquals(requests.length, 3);
-  assertEquals(requests[1].messages.at(-1)!.content as unknown, [{
-    type: "tool_result",
-    tool_use_id: "g1",
+  assertEquals(requests[1].messages.at(-1), {
+    role: "tool",
+    tool_call_id: "g1",
     content: "読者は段落 1 を選んでいます。",
-  }]);
-  assertEquals(requests[2].messages.at(-1)!.content as unknown, [{
-    type: "tool_result",
-    tool_use_id: "s1",
+  });
+  assertEquals(requests[2].messages.at(-1), {
+    role: "tool",
+    tool_call_id: "s1",
     content: "選びました。",
-  }]);
+  });
 });
 
-Deno.test("a draft that does not check out goes back to the model, not the browser", async () => {
+Deno.test("a draft that does not check out, or arguments that are not JSON, go back to the model", async () => {
   const { model, requests } = scripted([
     {
-      stop_reason: "tool_use",
-      content: [{
-        type: "tool_use",
-        id: "t1",
-        name: "draft_opinion",
-        input: {
-          type: "opinion",
-          support_opinion_id: "",
-          title: "x",
-          body: "y",
-          targets: [{
-            kind: "segment",
-            segment_index: 99,
-            opinion_id: "",
-            stance: "concern",
-          }],
+      content: "",
+      toolCalls: [
+        {
+          id: "t1",
+          name: "draft_opinion",
+          arguments: JSON.stringify({
+            type: "opinion",
+            support_opinion_id: "",
+            title: "x",
+            body: "",
+            targets: [{
+              kind: "segment",
+              segment_index: 99,
+              opinion_id: "",
+              stance: "concern",
+            }],
+          }),
         },
-      }],
+        { id: "t2", name: "search_opinions", arguments: "{壊れた" },
+      ],
+      finishReason: "tool_calls",
     },
     reply("段落を確かめます。"),
   ]);
@@ -341,10 +334,12 @@ Deno.test("a draft that does not check out goes back to the model, not the brows
 
   await chat.send("意見があります");
   assertEquals(drafts, []);
-  const result = (requests[1].messages.at(-1)!.content as {
-    is_error?: boolean;
-  }[])[0];
-  assertEquals(result.is_error, true);
+  const results = requests[1].messages.slice(-2) as {
+    tool_call_id: string;
+    content: string;
+  }[];
+  assertEquals(results.map((r) => r.tool_call_id), ["t1", "t2"]);
+  assert(results.every((r) => r.content.startsWith("エラー: ")));
 });
 
 Deno.test("the pre-filter refuses off-topic messages and counts them", async () => {
@@ -392,15 +387,16 @@ Deno.test("the transcript is checked before the model is called", async () => {
     );
   };
   await refused([{ role: "assistant", content: "最後が AI" }]);
-  // A state holding a block the server never writes.
+  // A state whose tool calls are not the ones this server writes.
   await refused([
     {
       role: "assistant",
       content: "",
-      state: JSON.stringify([{
-        type: "document",
-        source: { type: "text", data: "x" },
-      }]),
+      state: JSON.stringify({
+        role: "assistant",
+        content: "",
+        tool_calls: [{ id: "x", function: { name: "f", arguments: {} } }],
+      }),
     },
     { role: "user", content: "x" },
   ]);
@@ -413,7 +409,7 @@ Deno.test("the transcript is checked before the model is called", async () => {
   assertEquals(requests.length, 0);
 });
 
-Deno.test("without an API key the chat answers 503", async () => {
+Deno.test("without the Workers AI binding the chat answers 503", async () => {
   const { post } = await setup(null);
   const response = await post([{ role: "user", content: "こんにちは" }]);
   assertEquals(response.status, 503);
