@@ -1,8 +1,6 @@
 import { type Handle } from "@remix-run/component";
 
 import { DocumentList } from "../islands/document_list.tsx";
-import { routes } from "../routes.ts";
-import { buttonStyle } from "../theme.ts";
 
 export const title = "idobata-bot";
 export const description =
@@ -20,10 +18,6 @@ export default function Home(_handle: Handle) {
         と対話しながら、あなたの意見を聞き出して投稿します。似た意見がすでに
         あれば対話の中で示すので、賛同したり、その意見への疑問や補足として書いたり
         できます。
-      </p>
-
-      <p>
-        <a href={routes.newDocument.href()} mix={buttonStyle}>文書を登録する</a>
       </p>
 
       <DocumentList />
