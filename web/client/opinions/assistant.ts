@@ -25,6 +25,7 @@ import {
 } from "@remix-kbn/helper-agent/client";
 
 import { sessionStore } from "../session.ts";
+import { CHAT_MARKDOWN_CSS, renderRepliesAsMarkdown } from "./chat_markdown.ts";
 import { color, radius } from "../tokens.ts";
 import type { ComposeOutcome, ComposeStore } from "./compose.ts";
 
@@ -171,5 +172,12 @@ export function openAssistant(options: AssistantOptions): HelperAgentPanel {
   style.setProperty("--chat-panel-on-accent", color.onAccent);
   style.setProperty("--chat-panel-radius", radius.md);
   style.zIndex = "10";
+  if (!document.getElementById("chat-markdown-style")) {
+    const css = document.createElement("style");
+    css.id = "chat-markdown-style";
+    css.textContent = CHAT_MARKDOWN_CSS;
+    document.head.append(css);
+  }
+  renderRepliesAsMarkdown(chat.dialog);
   return chat;
 }
