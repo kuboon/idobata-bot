@@ -25,6 +25,8 @@ export interface ParsedSegment {
   text: string;
   /** The headings above it, outermost first, joined with ` > ` (`""` at the top). */
   headingPath: string;
+  /** Where its first line starts in the (line-ending normalised) document. */
+  lineStart: number;
 }
 
 const parser = unified().use(remarkParse).use(remarkGfm);
@@ -93,6 +95,7 @@ export function parseSegments(markdown: string): ParsedSegment[] {
       kind,
       text: source.slice(start, end),
       headingPath: headings.filter(Boolean).join(" > "),
+      lineStart: source.lastIndexOf("\n", start - 1) + 1,
     });
     if (node.type === "heading") {
       while (headings.length < node.depth - 1) headings.push("");
@@ -101,6 +104,84 @@ export function parseSegments(markdown: string): ParsedSegment[] {
   }
 
   return segments;
+}
+
+/** A segment key the owner may write: what {@link newSegmentKey} makes, or their own. */
+export const SEGMENT_KEY_PATTERN = /^[\w-]{1,40}$/;
+
+/** A key marker on a line of its own: `<!-- #k7f2a9 -->`. */
+const MARKER = /^<!--\s*#([\w-]{1,40})\s*-->$/;
+
+/**
+ * The document as the owner edits it: each segment preceded by a line with its key, as an HTML
+ * comment — invisible to any Markdown renderer, and the same for every kind of block
+ * (docs/architecture.md §3).
+ *
+ * @param markdown The document, without markers
+ * @param keys Each segment's key, in order
+ */
+export function withKeyMarkers(markdown: string, keys: string[]): string {
+  const source = markdown.replace(/\r\n?/g, "\n");
+  let out = "";
+  let at = 0;
+  parseSegments(source).forEach((segment, i) => {
+    const key = keys[i];
+    if (key === undefined) return;
+    out += source.slice(at, segment.lineStart) + `<!-- #${key} -->\n`;
+    at = segment.lineStart;
+  });
+  return out + source.slice(at);
+}
+
+/**
+ * Takes the key markers out of an edited document: the clean Markdown, which is what is stored and
+ * rendered, and the key each of its segments was marked with — `null` for one without a marker,
+ * which gets a new key. A marker belongs to the next segment after it; one followed by another
+ * marker, or by nothing, is dropped.
+ *
+ * Only a marker that is a top-level block of its own counts. One in the middle of a paragraph's
+ * lines would have split the paragraph, so a blank line is left in its place to keep the split.
+ *
+ * @throws Error if taking the markers out changes how the document splits into segments
+ */
+export function readKeyMarkers(
+  markdown: string,
+): { markdown: string; keys: (string | null)[] } {
+  const source = markdown.replace(/\r\n?/g, "\n");
+  const tree = parser.parse(source);
+  const keys: (string | null)[] = [];
+  const cuts: { from: number; to: number }[] = [];
+  let pending: string | null = null;
+
+  for (const node of tree.children) {
+    const start = node.position?.start.offset;
+    const end = node.position?.end.offset;
+    if (start === undefined || end === undefined) continue;
+    const marker = node.type === "html" ? MARKER.exec(node.value.trim()) : null;
+    if (marker) {
+      pending = marker[1];
+      const from = source.lastIndexOf("\n", start - 1) + 1;
+      cuts.push({ from, to: source[end] === "\n" ? end + 1 : end });
+    } else if (kindOf(node) !== null) {
+      keys.push(pending);
+      pending = null;
+    }
+  }
+
+  let clean = "";
+  let at = 0;
+  for (const cut of cuts) {
+    clean += source.slice(at, cut.from);
+    // Right after a line of text, taking the marker's line out would join that line to the next.
+    if (clean !== "" && !clean.endsWith("\n\n")) clean += "\n";
+    at = cut.to;
+  }
+  clean += source.slice(at);
+
+  if (parseSegments(clean).length !== keys.length) {
+    throw new Error("removing the ID lines changed the document's blocks");
+  }
+  return { markdown: clean, keys };
 }
 
 /**

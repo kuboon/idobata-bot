@@ -56,7 +56,7 @@ async function setup() {
     s.key
   );
 
-  return { db, browser, docId, seg1, seg2 };
+  return { db, browser, owner, docId, seg1, seg2 };
 }
 
 const input = (
@@ -472,4 +472,61 @@ Deno.test("the owner changes the title, description and deadline; nobody else ca
   assertEquals((await patch(alice, { title: "乗っ取り" })).status, 403);
   assertEquals((await patch(owner, { title: "" })).status, 400);
   assertEquals((await patch(owner, { closesAt: "いつか" })).status, 400);
+});
+
+Deno.test("a draft's new segment takes no opinions until it is released; kept keys keep theirs", async () => {
+  const { browser, owner, docId, seg1 } = await setup();
+  const alice = await browser("alice");
+  const posted = await alice.client.post(
+    docId,
+    input({
+      targets: [{ kind: "segment", segmentKey: seg1, stance: "concern" }],
+    }),
+  );
+
+  const json = (method: string, path: string, body: unknown) =>
+    owner.fetch(path, {
+      method,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((r) => r.json());
+  await json("PUT", `/api/docs/${docId}/draft`, {
+    markdown:
+      `<!-- #${seg1} -->\n本文1を直した\n\n<!-- #fresh -->\n新しい段落\n`,
+  });
+  const onDraft = await assertRejects(
+    () =>
+      alice.client.post(
+        docId,
+        input({
+          targets: [{
+            kind: "segment",
+            segmentKey: "fresh",
+            stance: "question",
+          }],
+        }),
+      ),
+    OpinionApiError,
+  );
+  assertEquals(onDraft.status, 400);
+
+  await json("POST", `/api/docs/${docId}/draft/release`, {});
+  await alice.client.post(
+    docId,
+    input({
+      targets: [{ kind: "segment", segmentKey: "fresh", stance: "question" }],
+    }),
+  );
+  const { opinions } = await alice.client.list(docId);
+  const carried = opinions.find((o) => o.id === posted.id);
+  assertEquals(carried?.targets[0], {
+    kind: "segment",
+    segmentKey: seg1,
+    stance: "concern",
+  });
+  assertEquals(carried?.version, 1);
+  assertEquals(
+    opinions.find((o) => o.id !== posted.id)?.version,
+    2,
+  );
 });

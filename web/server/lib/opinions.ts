@@ -138,8 +138,9 @@ function assertOpen(closesAt: string | null) {
 }
 
 /**
- * Checks that every target exists in this document: segment keys in any of its versions (an
- * opinion on an earlier version's segment stays valid), opinions in it and not hidden.
+ * Checks that every target exists in this document: segment keys in any of its released versions
+ * (an opinion on an earlier version's segment stays valid; a draft's are not public yet),
+ * opinions in it and not hidden.
  */
 async function assertTargetsExist(
   documentId: string,
@@ -151,7 +152,8 @@ async function assertTargetsExist(
     if (target.kind === "segment") {
       const { rows = [] } = await db.exec(sql`
         SELECT 1 FROM segments s JOIN versions v ON v.id = s.version_id
-         WHERE v.document_id = ${documentId} AND s.segment_key = ${target.segmentKey}
+         WHERE v.document_id = ${documentId} AND v.status = 'released'
+           AND s.segment_key = ${target.segmentKey}
          LIMIT 1
       `);
       if (rows.length === 0) {

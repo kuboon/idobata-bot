@@ -53,6 +53,13 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
   （`web/server/lib/segments.ts`）。分割は `@kuboon/md` と同じ remark-parse +
   remark-gfm
   のトップレベルのノードで、段落の本文は原文をそのまま切り出したもの。
+- 段落の key（`segment_key`）は版をまたいで同じ段落を指す。オーナーが編集する
+  Markdown には段落の前の行に `<!-- #key -->` として見せ、保存時に読み取って
+  取り除く（`withKeyMarkers` / `readKeyMarkers`）。key の無い段落には振る。
+- 次の版は下書き（文書ごとに 1 つ）として `/api/docs/:docId/draft` で保存し、
+  `/draft/release`
+  で公開する（`lib/documents.ts`）。読者・チャット・意見の対象は
+  公開済みの版だけ。
 - 表示は `@kuboon/md` で文書全体を一度に描画し、トップレベルの要素を原文中の
   位置で段落に対応づける（`web/client/lib/document.ts`）。段落ごとに別々に
   描画しないのは、参照リンクや脚注を解決するため。

@@ -1,6 +1,6 @@
 import { assertEquals } from "@std/assert";
 
-import { parseSegments } from "./segments.ts";
+import { parseSegments, readKeyMarkers, withKeyMarkers } from "./segments.ts";
 
 const kinds = (md: string) =>
   parseSegments(md).map(({ kind, text }) => [kind, text]);
@@ -108,4 +108,96 @@ Deno.test("segment text is sliced verbatim from the source", () => {
   for (const { text } of parseSegments(md)) {
     assertEquals(md.includes(text), true, text);
   }
+});
+
+Deno.test("key markers go before every kind of block and come out again unchanged", () => {
+  const md = `# 計画
+
+予算は100万円とする。
+
+- a
+- b
+
+| 項目 | 金額 |
+| - | - |
+| 人件費 | 80 |
+
+---
+
+\`\`\`
+code
+\`\`\`
+`;
+  const marked = withKeyMarkers(md, ["h", "p", "l", "t", "c"]);
+  assertEquals(
+    marked,
+    `<!-- #h -->
+# 計画
+
+<!-- #p -->
+予算は100万円とする。
+
+<!-- #l -->
+- a
+- b
+
+<!-- #t -->
+| 項目 | 金額 |
+| - | - |
+| 人件費 | 80 |
+
+---
+
+<!-- #c -->
+\`\`\`
+code
+\`\`\`
+`,
+  );
+  assertEquals(readKeyMarkers(marked), {
+    markdown: md,
+    keys: ["h", "p", "l", "t", "c"],
+  });
+});
+
+Deno.test("a block without a marker has no key; a stray marker is dropped", () => {
+  assertEquals(
+    readKeyMarkers(`<!-- #a -->
+一つ目。
+
+二つ目。
+
+<!-- #x -->
+<!-- #b -->
+三つ目。
+
+<!-- #z -->
+`),
+    {
+      markdown: "一つ目。\n\n二つ目。\n\n三つ目。\n\n",
+      keys: ["a", null, "b"],
+    },
+  );
+});
+
+Deno.test("a marker between lines keeps them as two blocks", () => {
+  const { markdown, keys } = readKeyMarkers("# 題\n<!-- #p -->\n本文\n");
+  assertEquals(keys, [null, "p"]);
+  assertEquals(markdown, "# 題\n\n本文\n");
+  assertEquals(
+    parseSegments("一行目\n二行目").length,
+    1,
+    "without the marker, the lines would be one paragraph",
+  );
+  assertEquals(
+    readKeyMarkers("一行目\n<!-- #b -->\n二行目"),
+    { markdown: "一行目\n\n二行目", keys: [null, "b"] },
+  );
+});
+
+Deno.test("other HTML comments and markers inside a block stay as written", () => {
+  const md = "<!-- メモ -->\n本文\n\n- a\n\n  <!-- #k -->\n  b\n";
+  const { markdown, keys } = readKeyMarkers(md);
+  assertEquals(markdown, md);
+  assertEquals(keys, [null, null]);
 });

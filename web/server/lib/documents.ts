@@ -2,8 +2,10 @@
  * Documents and their versions, as the API hands them out.
  *
  * A document is registered as Markdown and stored as version 1, already released, split into
- * segments (docs/architecture.md §3). Later versions — drafts, release, diffs — build on the same
- * tables.
+ * segments (docs/architecture.md §3). The owner then writes the next version as a draft — at
+ * most one per document — and releases it. The Markdown the owner edits carries each segment's
+ * key as a marker line (`segments.ts`); a segment that keeps its key keeps its opinions. Diffs
+ * and adoptions build on the same tables later.
  */
 
 import { sql } from "@remix-run/data-table";
@@ -17,12 +19,19 @@ import {
   segments,
   versions,
 } from "../db/schema.ts";
-import { newSegmentKey, parseSegments } from "./segments.ts";
+import {
+  newSegmentKey,
+  parseSegments,
+  readKeyMarkers,
+  SEGMENT_KEY_PATTERN,
+  withKeyMarkers,
+} from "./segments.ts";
 
 export const TITLE_MAX_LENGTH = 200;
 export const DESCRIPTION_MAX_LENGTH = 2000;
 /** Roughly a long policy paper; the whole document goes into every chat turn's context. */
 export const MARKDOWN_MAX_LENGTH = 200_000;
+export const RELEASE_NOTE_MAX_LENGTH = 2000;
 
 /** A document as the list and the viewer show it. */
 export interface DocumentSummary {
@@ -87,11 +96,6 @@ export function parseNewDocument(
   const description = typeof input.description === "string"
     ? input.description.trim()
     : "";
-  // Line endings normalised here, once, so the stored source and the segments sliced from it
-  // agree byte for byte — the viewer finds each segment in the source by its text.
-  const markdown = typeof input.markdown === "string"
-    ? input.markdown.replace(/\r\n?/g, "\n")
-    : "";
   const closesAtRaw = input.closesAt;
 
   if (!title || title.length > TITLE_MAX_LENGTH) {
@@ -106,15 +110,8 @@ export function parseNewDocument(
       error: `description must be at most ${DESCRIPTION_MAX_LENGTH} characters`,
     };
   }
-  if (markdown.length > MARKDOWN_MAX_LENGTH) {
-    return {
-      ok: false,
-      error: `markdown must be at most ${MARKDOWN_MAX_LENGTH} characters`,
-    };
-  }
-  if (parseSegments(markdown).length === 0) {
-    return { ok: false, error: "markdown has no content" };
-  }
+  const markdown = parseMarkdown(input.markdown);
+  if (!markdown.ok) return markdown;
 
   let closesAt: string | null = null;
   if (closesAtRaw !== undefined && closesAtRaw !== null && closesAtRaw !== "") {
@@ -125,7 +122,66 @@ export function parseNewDocument(
     closesAt = new Date(at).toISOString();
   }
 
-  return { ok: true, value: { title, description, closesAt, markdown } };
+  return {
+    ok: true,
+    value: { title, description, closesAt, markdown: markdown.value },
+  };
+}
+
+/**
+ * Checks a version's Markdown as the owner wrote it, key markers and all.
+ *
+ * @returns The Markdown, line endings normalised — once, here, so the stored source and the
+ *   segments sliced from it agree byte for byte (the viewer finds each segment in the source by
+ *   its text) — or the reason it was refused
+ */
+export function parseMarkdown(
+  raw: unknown,
+): { ok: true; value: string } | { ok: false; error: string } {
+  const markdown = typeof raw === "string" ? raw.replace(/\r\n?/g, "\n") : "";
+  if (markdown.length > MARKDOWN_MAX_LENGTH) {
+    return {
+      ok: false,
+      error: `markdown must be at most ${MARKDOWN_MAX_LENGTH} characters`,
+    };
+  }
+  let segmentCount: number;
+  try {
+    segmentCount = readKeyMarkers(markdown).keys.length;
+  } catch (e) {
+    return { ok: false, error: (e as Error).message };
+  }
+  if (segmentCount === 0) {
+    return { ok: false, error: "markdown has no content" };
+  }
+  return { ok: true, value: markdown };
+}
+
+/**
+ * A version's segment rows from the owner's Markdown: the clean source to store, and one row per
+ * segment with the key it was marked with — or a new one when it had none, or one already taken
+ * by an earlier segment of this version (a copied block).
+ */
+function versionContent(versionId: string, marked: string) {
+  const { markdown, keys } = readKeyMarkers(marked);
+  const used = new Set<string>();
+  const rows = parseSegments(markdown).map((segment, ord) => {
+    let key = keys[ord];
+    if (!key || !SEGMENT_KEY_PATTERN.test(key) || used.has(key)) {
+      do key = newSegmentKey(); while (used.has(key));
+    }
+    used.add(key);
+    return {
+      id: newId(),
+      version_id: versionId,
+      segment_key: key,
+      ord,
+      kind: segment.kind,
+      text: segment.text,
+      heading_path: segment.headingPath,
+    };
+  });
+  return { markdown, rows };
 }
 
 /**
@@ -141,7 +197,7 @@ export async function createDocument(
   const at = now();
   const documentId = newId();
   const versionId = newId();
-  const parsed = parseSegments(input.markdown);
+  const content = versionContent(versionId, input.markdown);
 
   await db.transaction(async (tx) => {
     await tx.create(documents, {
@@ -158,27 +214,27 @@ export async function createDocument(
       document_id: documentId,
       number: 1,
       status: "released",
-      source_md: input.markdown,
+      source_md: content.markdown,
       release_note: "",
       released_at: at,
       created_at: at,
     });
-    const rows = parsed.map((segment, ord) => ({
-      id: newId(),
-      version_id: versionId,
-      segment_key: newSegmentKey(),
-      ord,
-      kind: segment.kind,
-      text: segment.text,
-      heading_path: segment.headingPath,
-    }));
-    // In inserts D1 can take: one per ~14 segments, all still in the one batch.
-    for (const chunk of chunksForD1(rows, Object.keys(rows[0] ?? {}).length)) {
-      await tx.createMany(segments, chunk);
-    }
+    await insertSegments(tx, content.rows);
   });
 
   return documentId;
+}
+
+type SegmentRow = ReturnType<typeof versionContent>["rows"][number];
+
+/** In inserts D1 can take: one per ~14 segments, all still in the caller's one batch. */
+async function insertSegments(
+  tx: Pick<ReturnType<typeof getDb>, "createMany">,
+  rows: SegmentRow[],
+): Promise<void> {
+  for (const chunk of chunksForD1(rows, Object.keys(rows[0] ?? {}).length)) {
+    await tx.createMany(segments, chunk);
+  }
 }
 
 type SummaryRow = {
@@ -363,4 +419,153 @@ export async function updateDocument(
   if (patch.description !== undefined) changes.description = patch.description;
   if (patch.closesAt !== undefined) changes.closes_at = patch.closesAt;
   await getDb().update(documents, id, changes);
+}
+
+/** The next version as the owner edits it. */
+export interface DraftView {
+  /** The number it will have once released. */
+  number: number;
+  /** Its Markdown, each segment preceded by its key marker. */
+  markdown: string;
+  /**
+   * Whether it is a saved draft. When not, the Markdown is the latest release's, to start from,
+   * and nothing is stored until the owner saves.
+   */
+  saved: boolean;
+  /** The latest released version's number. */
+  released: number;
+}
+
+/** A version's Markdown with its segments' keys marked. */
+async function markedSource(
+  version: { id: string; source_md: string },
+): Promise<string> {
+  const rows = await getDb().findMany(segments, {
+    where: { version_id: version.id },
+    orderBy: ["ord", "asc"],
+  });
+  return withKeyMarkers(version.source_md, rows.map((r) => r.segment_key));
+}
+
+async function documentVersions(documentId: string) {
+  const all = await getDb().findMany(versions, {
+    where: { document_id: documentId },
+    orderBy: ["number", "asc"],
+  });
+  return {
+    draft: all.find((v) => v.status === "draft") ?? null,
+    released: all.filter((v) => v.status === "released").at(-1) ?? null,
+    next: (all.at(-1)?.number ?? 0) + 1,
+  };
+}
+
+/**
+ * The document's draft, or the latest release to start one from.
+ *
+ * @returns The draft, or `null` when the document has no released version (no such document)
+ */
+export async function getDraft(documentId: string): Promise<DraftView | null> {
+  const { draft, released, next } = await documentVersions(documentId);
+  if (!released) return null;
+  if (draft) {
+    return {
+      number: draft.number,
+      markdown: await markedSource(draft),
+      saved: true,
+      released: released.number,
+    };
+  }
+  return {
+    number: next,
+    markdown: await markedSource(released),
+    saved: false,
+    released: released.number,
+  };
+}
+
+/**
+ * Saves the owner's Markdown as the document's draft, replacing the one there is. Segments
+ * without a key get one here; the returned draft shows them, so the owner sees every key.
+ *
+ * @param markdown Checked with {@link parseMarkdown}
+ */
+export async function saveDraft(
+  documentId: string,
+  markdown: string,
+): Promise<DraftView | null> {
+  const { draft, released, next } = await documentVersions(documentId);
+  if (!released) return null;
+  const versionId = draft?.id ?? newId();
+  const content = versionContent(versionId, markdown);
+  const at = now();
+
+  await getDb().transaction(async (tx) => {
+    if (draft) {
+      await tx.deleteMany(segments, { where: { version_id: draft.id } });
+      await tx.updateMany(versions, { source_md: content.markdown }, {
+        where: { id: draft.id },
+      });
+    } else {
+      await tx.create(versions, {
+        id: versionId,
+        document_id: documentId,
+        number: next,
+        status: "draft",
+        source_md: content.markdown,
+        release_note: "",
+        released_at: null,
+        created_at: at,
+      });
+    }
+    await insertSegments(tx, content.rows);
+    await tx.updateMany(documents, { updated_at: at }, {
+      where: { id: documentId },
+    });
+  });
+
+  return {
+    number: draft?.number ?? next,
+    markdown: withKeyMarkers(
+      content.markdown,
+      content.rows.map((r) => r.segment_key),
+    ),
+    saved: true,
+    released: released.number,
+  };
+}
+
+/** Throws the draft away. @returns Whether there was one */
+export async function discardDraft(documentId: string): Promise<boolean> {
+  const { draft } = await documentVersions(documentId);
+  if (!draft) return false;
+  await getDb().transaction(async (tx) => {
+    await tx.deleteMany(segments, { where: { version_id: draft.id } });
+    await tx.deleteMany(versions, {
+      where: { id: draft.id, status: "draft" },
+    });
+  });
+  return true;
+}
+
+/**
+ * Releases the draft: from now on it is what readers see, what the chat reads and what new
+ * opinions are posted against. The earlier versions stay readable.
+ *
+ * @returns The released version's number, or `null` when there was no draft
+ */
+export async function releaseDraft(
+  documentId: string,
+  releaseNote: string,
+): Promise<number | null> {
+  const { draft } = await documentVersions(documentId);
+  if (!draft) return null;
+  const at = now();
+  const result = await getDb().exec(sql`
+    UPDATE versions
+       SET status = 'released', released_at = ${at}, release_note = ${releaseNote}
+     WHERE id = ${draft.id} AND status = 'draft'
+  `);
+  if (!result.affectedRows) return null;
+  await getDb().update(documents, documentId, { updated_at: at });
+  return draft.number;
 }
