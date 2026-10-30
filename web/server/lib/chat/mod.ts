@@ -5,8 +5,9 @@
  * to act on the page: read or set the selection, or open the posting dialog (`draft_opinion`).
  *
  * Nothing is stored. The browser holds the transcript and sends all of it every turn; each
- * assistant message carries the API's raw content blocks as its opaque `state`, which comes back
- * here and is replayed as is, so thinking and the cached prefix survive the round trip.
+ * assistant message carries the model's own message (its text and tool calls, with the arguments
+ * as the model wrote them) as its opaque `state`, which comes back here and is replayed, so the
+ * model sees its earlier turns exactly as it wrote them.
  */
 
 import { CHAT_MESSAGE_MAX_LENGTH } from "@kuboon/idobata-bot";
@@ -17,19 +18,13 @@ import type {
   ChatMessage,
   ToolResult,
 } from "@remix-kbn/helper-agent/controller";
-import type {
-  BetaContentBlock,
-  BetaContentBlockParam,
-  BetaMessageParam,
-  BetaToolResultBlockParam,
-} from "@anthropic-ai/sdk/resources/beta/messages/messages";
 
 import { sql } from "@remix-run/data-table";
 import { getDb } from "../../db/mod.ts";
 import { type DocumentDetail, getDocument, isOpen } from "../documents.ts";
 import { filterMessage } from "./filter.ts";
-import type { ChatModel } from "./model.ts";
-import { firstMessage, systemBlocks, TOOLS } from "./prompt.ts";
+import type { ChatModel, ModelMessage, ModelToolCall } from "./model.ts";
+import { systemMessage, TOOLS } from "./prompt.ts";
 import { type DraftInput, resolveDraft, runTool } from "./tools.ts";
 
 /** How many messages a conversation may hold: about 30 exchanges with their tool turns. */
@@ -61,154 +56,110 @@ const fail = (message: string): never => {
   throw new ChatError(400, message);
 };
 
-/**
- * One block of the browser's history, rebuilt from the fields it may have. What the server
- * returned comes back here, so these are the kinds a turn produces; a document or an image could
- * only be the browser's own, and a `cache_control` would move the cache's breakpoints.
- */
-function block(value: unknown): BetaContentBlockParam {
-  if (!isRecord(value)) return fail("invalid content block");
-  switch (value.type) {
-    case "text":
-      if (typeof value.text !== "string") return fail("invalid text block");
-      return Array.isArray(value.citations) && value.citations.length > 0
-        ? {
-          type: "text",
-          text: value.text,
-          citations: value.citations as never,
-        }
-        : { type: "text", text: value.text };
-    case "thinking":
-      if (
-        typeof value.thinking !== "string" ||
-        typeof value.signature !== "string"
-      ) return fail("invalid thinking block");
-      return {
-        type: "thinking",
-        thinking: value.thinking,
-        signature: value.signature,
-      };
-    case "redacted_thinking":
-      if (typeof value.data !== "string") return fail("invalid thinking block");
-      return { type: "redacted_thinking", data: value.data };
-    case "tool_use":
-      if (
-        typeof value.id !== "string" || typeof value.name !== "string" ||
-        !isRecord(value.input)
-      ) return fail("invalid tool_use block");
-      return {
-        type: "tool_use",
-        id: value.id,
-        name: value.name,
-        input: value.input,
-      };
-    case "tool_result": {
-      if (typeof value.tool_use_id !== "string") {
-        return fail("invalid tool_result block");
-      }
-      const content = typeof value.content === "string"
-        ? value.content
-        : Array.isArray(value.content)
-        ? value.content.map((b) => {
-          if (!isRecord(b) || b.type !== "text" || typeof b.text !== "string") {
-            return fail("invalid tool_result block");
-          }
-          return { type: "text" as const, text: b.text };
-        })
-        : fail("invalid tool_result block");
-      return {
-        type: "tool_result",
-        tool_use_id: value.tool_use_id,
-        content,
-        ...(value.is_error === true ? { is_error: true } : {}),
-      };
-    }
-    default:
-      return fail(`content block type not allowed: ${String(value.type)}`);
-  }
+type AssistantMessage = Extract<ModelMessage, { role: "assistant" }>;
+
+/** The model's message as `state` keeps it. */
+function toState(content: string, calls: ModelToolCall[]): string {
+  return JSON.stringify(assistantMessage(content, calls));
+}
+
+function assistantMessage(
+  content: string,
+  calls: ModelToolCall[],
+): AssistantMessage {
+  return calls.length === 0 ? { role: "assistant", content } : {
+    role: "assistant",
+    content,
+    tool_calls: calls.map((c) => ({
+      id: c.id,
+      type: "function" as const,
+      function: { name: c.name, arguments: c.arguments },
+    })),
+  };
 }
 
 /**
- * An assistant message's API content, from its `state` when that reads back as blocks this
- * server writes, and otherwise rebuilt from its text and calls.
+ * An assistant message for the model, from its `state` when that reads back as one this server
+ * wrote, and otherwise rebuilt from its text and calls. Either way, only text and tool calls get
+ * through.
  */
-function assistantContent(
+function assistantFrom(
   message: Extract<ChatMessage, { role: "assistant" }>,
-): BetaContentBlockParam[] {
+): AssistantMessage {
   if (message.state !== undefined) {
     try {
       const parsed = JSON.parse(message.state);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed.map(block);
+      if (isRecord(parsed) && typeof parsed.content === "string") {
+        const raw = parsed.tool_calls ?? [];
+        if (!Array.isArray(raw)) return fail("invalid state");
+        const calls = raw.map((c): ModelToolCall => {
+          const fn = isRecord(c) && isRecord(c.function) ? c.function : null;
+          if (
+            !fn || typeof c.id !== "string" || typeof fn.name !== "string" ||
+            typeof fn.arguments !== "string"
+          ) return fail("invalid state");
+          return { id: c.id, name: fn.name, arguments: fn.arguments };
+        });
+        return assistantMessage(parsed.content, calls);
+      }
     } catch (error) {
       if (error instanceof ChatError) throw error;
       // Not JSON: rebuild it below.
     }
   }
-  const content: BetaContentBlockParam[] = [];
-  if (message.content) content.push({ type: "text", text: message.content });
-  for (const call of message.toolCalls ?? []) {
-    content.push({
-      type: "tool_use",
+  return assistantMessage(
+    message.content,
+    (message.toolCalls ?? []).map((call) => ({
       id: call.id,
       name: call.name,
-      input: isRecord(call.input) ? call.input : {},
-    });
-  }
-  return content;
+      arguments: JSON.stringify(call.input ?? {}),
+    })),
+  );
 }
 
 /** The longest tool result the browser may send back: a sentence about the dialog. */
 const TOOL_RESULT_MAX_LENGTH = 2000;
 
+/** A tool's result as the model reads it; a failure says so. */
+const resultContent = (r: { content: string; isError?: boolean }) =>
+  r.isError ? `エラー: ${r.content}` : r.content;
+
 /**
- * The transcript as the Claude API's messages, after the document. Messages of the same role
- * next to each other are merged — tool results are a `user` turn, and the server's and the
- * browser's results for one assistant message arrive as two.
+ * The transcript as the model's messages, after the system message.
  *
  * @throws {ChatError} 400 when it is not a conversation this server could have had
  */
 export function toModelMessages(
   messages: readonly ChatMessage[],
-): BetaMessageParam[] {
-  const out: BetaMessageParam[] = [];
-  const push = (
-    role: "user" | "assistant",
-    content: BetaContentBlockParam[],
-  ) => {
-    if (content.length === 0) return;
-    const last = out.at(-1);
-    if (last?.role === role && Array.isArray(last.content)) {
-      last.content = [...last.content, ...content];
-    } else out.push({ role, content });
-  };
+): ModelMessage[] {
+  const out: ModelMessage[] = [];
   const called = new Set<string>();
 
   for (const message of messages) {
     if (!isRecord(message)) return fail("invalid message");
     if (message.role === "user") {
       if (typeof message.content !== "string") return fail("invalid message");
-      push("user", [{ type: "text", text: message.content }]);
+      out.push({ role: "user", content: message.content });
     } else if (message.role === "assistant") {
-      const content = assistantContent(message);
-      for (const b of content) if (b.type === "tool_use") called.add(b.id);
-      push("assistant", content);
+      const assistant = assistantFrom(message);
+      for (const c of assistant.tool_calls ?? []) called.add(c.id);
+      out.push(assistant);
     } else if (message.role === "tool" && Array.isArray(message.results)) {
-      push(
-        "user",
-        message.results.map((r): BetaToolResultBlockParam => {
-          if (
-            !isRecord(r) || typeof r.id !== "string" || !called.has(r.id) ||
-            typeof r.content !== "string" ||
-            r.content.length > TOOL_RESULT_MAX_LENGTH
-          ) return fail("invalid tool result");
-          return {
-            type: "tool_result",
-            tool_use_id: r.id,
+      for (const r of message.results) {
+        if (
+          !isRecord(r) || typeof r.id !== "string" || !called.has(r.id) ||
+          typeof r.content !== "string" ||
+          r.content.length > TOOL_RESULT_MAX_LENGTH
+        ) return fail("invalid tool result");
+        out.push({
+          role: "tool",
+          tool_call_id: r.id,
+          content: resultContent({
             content: r.content,
-            ...(r.isError === true ? { is_error: true } : {}),
-          };
-        }),
-      );
+            isError: r.isError === true,
+          }),
+        });
+      }
     } else return fail("invalid message");
   }
   return out;
@@ -281,14 +232,14 @@ function channel<T>() {
  *
  * @param document The document's version — it makes the first message, which must come out the
  *   same every turn
- * @param model The Claude API, or a scripted stand-in
+ * @param model The model on Workers AI, or a scripted stand-in
  */
 export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
   const context = { documentId: document.id, segments: document.segments };
 
   return {
     async *respond(input: AgentInput): AsyncGenerator<AgentEvent> {
-      let history: BetaMessageParam[];
+      let history: ModelMessage[];
       try {
         history = toModelMessages(input.messages);
       } catch (error) {
@@ -333,11 +284,11 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
         }
       }
 
-      const prefix = [
-        firstMessage(document.title, document.segments),
+      const prefix: ModelMessage[] = [
+        systemMessage(document.title, document.segments),
         ...history,
       ];
-      const added: BetaMessageParam[] = [];
+      const added: ModelMessage[] = [];
 
       for (let round = 0; round < TOOL_ROUNDS_MAX; round++) {
         // A new round is a new assistant message. The session closes the previous one's tool
@@ -346,11 +297,7 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
         if (round > 0) yield { type: "text", text: "" };
         const texts = channel<string>();
         const running = model.run(
-          {
-            system: systemBlocks(),
-            messages: [...prefix, ...added],
-            tools: TOOLS,
-          },
+          { messages: [...prefix, ...added], tools: TOOLS },
           (text) => texts.push(text),
           input.signal,
         ).finally(() => texts.close());
@@ -372,24 +319,17 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
           return;
         }
 
-        yield { type: "state", state: JSON.stringify(message.content) };
-        if (message.stop_reason === "refusal") {
-          yield { type: "done", reason: "refusal" };
-          return;
-        }
-        if (message.stop_reason === "max_tokens") {
+        yield {
+          type: "state",
+          state: toState(message.content, message.toolCalls),
+        };
+        if (message.finishReason === "length") {
           yield { type: "done", reason: "max-tokens" };
           return;
         }
-        added.push({
-          role: "assistant",
-          content: message.content as BetaContentBlockParam[],
-        });
-        const calls = message.content.filter(
-          (b): b is Extract<BetaContentBlock, { type: "tool_use" }> =>
-            b.type === "tool_use",
-        );
-        if (message.stop_reason !== "tool_use" || calls.length === 0) {
+        added.push(assistantMessage(message.content, message.toolCalls));
+        const calls = message.toolCalls;
+        if (calls.length === 0) {
           yield { type: "done", reason: "end" };
           return;
         }
@@ -399,17 +339,35 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
         const results: ToolResult[] = [];
         let forBrowser = false;
         for (const call of calls) {
+          let input: unknown;
+          try {
+            input = JSON.parse(call.arguments);
+          } catch {
+            input = null;
+          }
+          if (!isRecord(input)) {
+            yield {
+              type: "tool-call",
+              call: { id: call.id, name: call.name, input: {} },
+            };
+            results.push({
+              id: call.id,
+              content: "引数が JSON のオブジェクトではありません。",
+              isError: true,
+            });
+            continue;
+          }
           if (PAGE_TOOLS.has(call.name)) {
             yield {
               type: "tool-call",
-              call: { id: call.id, name: call.name, input: call.input },
+              call: { id: call.id, name: call.name, input },
             };
             forBrowser = true;
             continue;
           }
           if (call.name === DRAFT_TOOL) {
             const resolved = await resolveDraft(
-              call.input as DraftInput,
+              input as unknown as DraftInput,
               context,
             );
             if ("draft" in resolved) {
@@ -422,18 +380,18 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
             }
             yield {
               type: "tool-call",
-              call: { id: call.id, name: call.name, input: call.input },
+              call: { id: call.id, name: call.name, input },
             };
             results.push({ id: call.id, ...resolved.error });
             continue;
           }
           yield {
             type: "tool-call",
-            call: { id: call.id, name: call.name, input: call.input },
+            call: { id: call.id, name: call.name, input },
           };
           results.push({
             id: call.id,
-            ...(await runTool(call.name, call.input, context)),
+            ...(await runTool(call.name, input, context)),
           });
         }
         for (const result of results) yield { type: "tool-result", result };
@@ -441,15 +399,13 @@ export function chatAgent(document: DocumentDetail, model: ChatModel): Agent {
           yield { type: "done", reason: "tools" };
           return;
         }
-        added.push({
-          role: "user",
-          content: results.map((r) => ({
-            type: "tool_result",
-            tool_use_id: r.id,
-            content: r.content,
-            ...(r.isError ? { is_error: true } : {}),
-          })),
-        });
+        for (const r of results) {
+          added.push({
+            role: "tool",
+            tool_call_id: r.id,
+            content: resultContent(r),
+          });
+        }
       }
       yield { type: "error", message: "AI の応答が長くなりすぎました。" };
     },

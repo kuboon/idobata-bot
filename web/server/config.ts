@@ -19,7 +19,6 @@ export interface Env {
   readonly IDP_ORIGIN?: string;
   readonly RP_ORIGIN?: string;
   readonly RP_SIGNING_KEY_JWK?: string;
-  readonly ANTHROPIC_API_KEY?: string;
 }
 
 /** Parsed, typed configuration used across the server. */
@@ -39,8 +38,6 @@ export interface Config {
    * (fine for dev; set a fixed key in production).
    */
   readonly rpSigningKeyJwk: string;
-  /** The Claude API key for the chat. Empty until set; the chat answers `503` without it. */
-  readonly anthropicApiKey: string;
 }
 
 /** Derive the typed {@link Config} from a raw host env record. */
@@ -49,7 +46,6 @@ export function loadConfig(env: Env): Config {
     idpOrigin: env.IDP_ORIGIN ?? "https://id.kbn.one",
     rpOrigin: env.RP_ORIGIN ?? "",
     rpSigningKeyJwk: env.RP_SIGNING_KEY_JWK ?? "",
-    anthropicApiKey: env.ANTHROPIC_API_KEY ?? "",
   };
 }
 
@@ -58,7 +54,6 @@ const ENV_KEYS = [
   "IDP_ORIGIN",
   "RP_ORIGIN",
   "RP_SIGNING_KEY_JWK",
-  "ANTHROPIC_API_KEY",
 ] as const;
 
 /**

@@ -25,28 +25,28 @@ flowchart LR
     WAI[Workers AI\nClef 前段フィルタ]
   end
   IDP[id.kbn.one]
-  CLAUDE[Claude API]
+  QWEN[Workers AI\nqwen3.8-27b]
 
   UI -->|DPoP fetch| IDP
   UI --> ASSETS
   UI -->|DPoP proof + id token\n+ 対話の履歴| W
   UI <-->|WebSocket| DO
   W --> D1 & VEC & DO & WAI
-  W -->|SSE| CLAUDE
+  W -->|stream| QWEN
   W -->|JWKS 検証| IDP
 ```
 
 | コンポーネント         | 役割                                                                                         |
 | ---------------------- | -------------------------------------------------------------------------------------------- |
 | Workers static assets  | SSG したページ（トップ・文書ページの殻・マイページ等）と client chunk                        |
-| Worker                 | `/api/*`（JSON / SSE）と `/d/*`（文書ページの殻を返す）。Claude 呼び出しもここ               |
+| Worker                 | `/api/*`（JSON / SSE）と `/d/*`（文書ページの殻を返す）。AI の呼び出しもここ                 |
 | **D1**                 | 正本。文書・版・セグメント・意見・賛同・表明・採用・モデレーションログ                       |
 | **Workers AI**         | 前段フィルタ（`@cf/cloudflare/clef`、§5）。埋め込みの生成も（予定。例 `@cf/baai/bge-m3`）    |
 | Durable Object（予定） | 文書ごとに 1 つの `DocumentRoom`。WebSocket（Hibernation API）で意見のリアルタイム配信（§7） |
 | Vectorize（予定）      | 意見の埋め込み。対話中の類似意見検索（`docId` の metadata filter）                           |
 | Rate Limiting（予定）  | 対話の濫用対策。未ログインは DPoP 鍵の thumbprint と IP、ログイン済みは userId 単位          |
 | Turnstile（予定）      | 未ログインで対話を始めるときの bot 対策                                                      |
-| AI Gateway（任意）     | Claude 呼び出しのログ、コスト可視化。SDK の `baseURL` を差し替えるだけで入れられる           |
+| AI Gateway（任意）     | AI 呼び出しのログ、コスト可視化                                                              |
 
 Markdown だけなら原本は D1 にそのまま入るので、R2・取り込み用の Workflows は
 使わない（PDF を足すときに足す）。
@@ -177,7 +177,7 @@ stance = concern | proposal | support | question | objection
   来たときに備えて、`UPDATE` / `DELETE` は「被リンク 0・賛同 0 の行だけ」という
   条件付きの 1 文にし、競合しても規則が破られないようにする。
 
-## 5. AI との対話（Claude API）
+## 5. AI との対話（Workers AI）
 
 [`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent) の上に作る。
 `POST /api/docs/:docId/chat?v=<版>` が 1 ターンを helper-agent の形式（SSE）で
@@ -187,13 +187,12 @@ stance = concern | proposal | support | question | objection
 
 - 会話の履歴は**ブラウザの helper-agent のセッションだけ**（メモリ。タブを
   閉じる・サインインで遷移すると消える）。サーバーは毎ターン、ブラウザから送ら
-  れた履歴に文書とツールを足して Claude を呼び、結果を返すだけで、何も書き
+  れた履歴に文書とツールを足してモデルを呼び、結果を返すだけで、何も書き
   残さない。
-- 履歴の assistant メッセージの `state` に、Claude の `response.content` を
-  **そのまま**入れて往復させる（thinking block を含む）。サーバーは受け取った
-  `state` を検査してから再生する。thinking block は Claude 側で署名されている
-  ので、書き換えれば API が受け付けないか捨てるだけで、改ざんしても得るものは
-  ない。
+- 履歴の assistant メッセージの `state` に、モデルが返したメッセージ（本文と
+  tool call。引数はモデルが書いたままの JSON）を入れて往復させる。ブラウザの
+  ツールには段落キーに直した入力を渡すが、モデルには自分の書いた引数を見せる
+  ため。サーバーは受け取った `state` を検査し、本文と tool call 以外は通さない。
 - 意見の投稿にも会話は添付しない（意見は表明・タイトル・本文だけ）。
 
 ### 流れ
@@ -207,15 +206,14 @@ stance = concern | proposal | support | question | objection
    ブラウザが実行するツール = `draft_opinion`・`get_selection`・
    `select_segments`）。版は会話の間 URL で固定する。選択は固定しない。
 3. Worker は:
-   1. **検証**: 履歴の形（`state` の block の種類は `text` / `thinking` /
-      `tool_use` / `tool_result` だけ、document や image は拒否。tool の結果は
-      先に呼ばれた tool_use にしか付けられず、長さに上限）、ターン数とバイト数の
+   1. **検証**: 履歴の形（`state` は本文と tool call だけ。tool の結果は先に
+      呼ばれた tool call にしか付けられず、長さに上限）、ターン数とバイト数の
       上限、募集期日（過ぎていれば `403`）。（予定: Rate Limiting。）
    2. **前段フィルタ（Clef）** で今回の発言を判定し、文書と関係ない発言なら
       定型文を返して本体を呼ばない。
    3. 本体を streaming で呼ぶ。`search_opinions` / `get_opinion` はサーバー側で
       実行し、同じリクエストの中でツールループを回す。途中経過も含めて SSE で
-      流す。各ラウンドの content は `state` で返す。
+      流す。各ラウンドのメッセージは `state` で返す。
    4. AI がブラウザのツールを呼ぶと、ブラウザのツール呼び出しとしてターンを
       終える（`done: tools`）。`draft_opinion` はサーバーが入力を検査して段落
       キーに直してから渡す。
@@ -263,29 +261,25 @@ const { answers } = await env.AI.run("@cf/cloudflare/clef", {
 - binding が無い（ローカル・テスト）か Clef が落ちているときは素通し。本体の
   system prompt でも文書と関係ない話には乗らないよう指示する（取りこぼし対策）。
 
-### 本体リクエストの組み立て（prompt caching 前提）
+### 本体リクエストの組み立て（prefix キャッシュ前提）
 
-キャッシュは prefix 一致なので、変わらないものを前に置く。
+メッセージは chat-completions の形。キャッシュは prefix 一致なので、変わらない
+ものを前に置く。
 
 ```
 tools                     固定（サーバーの TOOLS。ブラウザが送る schema は使わない）
-system                    固定の指示文
-messages[0] (user)        サーバーが組み立てる（ブラウザの履歴には入れない）
-  ├ document              版のセグメント列（custom content, citations 有効）
-  │                        ← cache_control (ttl 1h)  … 版ごとに全ユーザーで共有
-  └ text                  固定の一文（選択は get_selection で読む）
-messages[1..]             ブラウザから来た履歴＋今回の発言    ← 自動キャッシュ
+messages[0] (system)      サーバーが組み立てる（ブラウザの履歴には入れない）
+  ├ 指示文                固定
+  └ 文書                  版のセグメント列。[0] から番号付き … 版ごとに全ユーザーで共有
+messages[1..]             ブラウザから来た履歴＋今回の発言
 ```
 
-- **文書は custom content の document block**（セグメント 1 つ = content block 1
-  つ）で渡し、`citations: { enabled: true }` にする。引用は
-  `content_block_location` で返るので、block index がそのままセグメントになる。
 - `messages[0]` はサーバーが毎回同じバイト列で組み立てる。ブラウザは 2 番目
   以降だけを持つので、文書を送り返してもらう必要も、改ざんされる心配もない。
 - **選択と意見の一覧は `messages[0]` に入れない**。どちらも会話中に変わり、
-  thinking を保つには前のターンを 1 バイトも変えられない。モデルがツールで
-  必要なときに取りに行く（prefix を壊さない）。
-- 文書ブロックは同じ版を読む全ユーザーで同じなので、キャッシュが当たる。
+  入れると prefix が会話ごとに変わってキャッシュが当たらない。モデルがツールで
+  必要なときに取りに行く。
+- 文書は同じ版を読む全ユーザーで同じなので、キャッシュが当たる。
 
 ### ツール
 
@@ -297,15 +291,16 @@ messages[1..]             ブラウザから来た履歴＋今回の発言    �
 | `select_segments` | ブラウザ | `{ segment_indices }` の段落を選んでスクロールし、表示中の意見数を返す                    |
 | `draft_opinion`   | ブラウザ | 下書き入りの投稿ダイアログを開き、投稿した／閉じたを返す（入力は下記）                    |
 
-- 段落はモデルにはブロック番号（document block の index、0 始まり）で見せる。
+- 段落はモデルにはブロック番号（文書の `[i]`、0 始まり）で見せる。
 - サーバーのツールは未ログインの読者の権限で意見を読む。
-- `draft_opinion` の入力は 2 通り（strict のため全項目必須で、使わない項目は
-  空文字・空配列・`-1`）:
+- `draft_opinion` の入力は 2 通り（全項目必須で、使わない項目は空文字・空配列・
+  `-1`）:
   - 意見の下書き: `{ type: "opinion", title, targets, body }`（body
     は空でもよい）。 `targets` は §4 の表明の配列。
   - 賛同の提案: `{ type: "support", support_opinion_id }`。
-- すべて `strict: true`。`tool_choice` は `auto` にし、system prompt で
-  使いどころを指示する。
+- `tool_choice` は `auto` にし、system prompt で使いどころを指示する。引数が
+  JSON として読めないときや、下書きが検査を通らないときは、エラーとしてモデルに
+  返して直させる。
 
 ### system prompt の要点
 
@@ -324,28 +319,28 @@ messages[1..]             ブラウザから来た履歴＋今回の発言    �
 
 ### モデルと設定
 
-- 本体: **`claude-sonnet-5-5`**。thinking は adaptive、`output_config.effort` は
-  `low`（会話の質を見て `medium` に上げるか決める）。
-- 拒否されたときのフォールバック: `betas: ["server-side-fallback-2026-07-01"]`
-  と `fallbacks: "default"`。最終的に `stop_reason: "refusal"` なら定型文。
-- 公式 SDK `@anthropic-ai/sdk` を Worker から使い、
-  `client.beta.messages.stream()` で中継する（fallbacks が beta のため）。
-  Claude API を呼ぶのは `lib/chat/model.ts` だけ。API キーは Worker secret
-  `ANTHROPIC_API_KEY`。未設定なら対話は `503`。
-- 意見の埋め込みは Workers AI（Claude API に埋め込みは無い）。
+- 本体: Workers AI の **`@cf/qwen/qwen3.8-27b`**（コンテキスト 262K、function
+  calling 対応）。前段フィルタと同じ `env.AI` binding で呼ぶので API キーは
+  要らない。binding が無い（ローカル・テスト）と対話は `503`。
+- `reasoning_effort: "low"`（既定の xhigh はチャットには遅く高い）、
+  `max_completion_tokens` 4096、`stream: true`。
+- 答えは chat-completions の形（`choices[].delta`）で読む。Workers AI の古い形
+  （`response` / `tool_calls`）でも読めるようにしてある（`lib/chat/model.ts`）。
+  モデルを呼ぶのはこのファイルだけ。
+- 意見の埋め込みも Workers AI（予定）。
 
 ### コストの目安
 
-価格（per MTok）: Sonnet 5.5 は入力 $2 / 出力 $10 / キャッシュ読み $0.20、Clef
-は入力 $0.24（出力は無料）。文書 5 万トークン、1 ターン出力 800
+価格（per MTok）: qwen3.8-27b は入力 $0.45 / 出力 $3.20 / キャッシュ入力
+$0.05、Clef は入力 $0.24（出力は無料）。文書 5 万トークン、1 ターン出力 800
 トークンとすると:
 
-- キャッシュに当たったターン: 文書読み 50K × $0.20/M ≈ $0.01、出力 ≈ $0.008 →
-  **1 ターン約 $0.02**（履歴が伸びた分は増える）
-- 1h キャッシュの書き込み（版ごと 1 時間に 1 回）: 50K × 2 × $2/M ≈ $0.20
+- キャッシュに当たったターン: 文書読み 50K × $0.05/M ≈ $0.0025、出力 ≈ $0.0026 →
+  **1 ターン約 $0.005**（履歴が伸びた分は増える）
+- キャッシュに当たらないターン: 文書読み 50K × $0.45/M ≈ $0.023
 - 前段フィルタ: 1 回 2 千トークンとして $0.0005
 
-10 ターンの会話で $0.2〜0.3。
+10 ターンの会話で $0.05〜0.1。
 
 ## 6. 募集期日
 

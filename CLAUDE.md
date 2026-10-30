@@ -1,6 +1,6 @@
 # idobata-bot
 
-文書への意見募集サービス。文書を読み込んだ AI（Claude）と対話しながらユーザーの
+文書への意見募集サービス。文書を読み込んだ AI と対話しながらユーザーの
 意見を聞き出し、定型化して投稿する。Remix v3 + Deno で書き、Cloudflare Workers
 にデプロイする。認証は id.kbn.one。
 
@@ -74,7 +74,7 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - 編集・削除は「その時点で賛同も被リンクも無く、採用されていない」ときだけ。
   判定は書き込みの `WHERE` にも入れて、競合しても破られないようにする。
 
-## チャット（Claude API）
+## チャット（Workers AI）
 
 `docs/architecture.md`
 §5。[`@remix-kbn/helper-agent`](https://jsr.io/@remix-kbn/helper-agent)
@@ -92,12 +92,16 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - 選択は会話に固定しない。AI はブラウザのツール `get_selection` で読者の選択を
   読み、`select_segments` で段落を選んで見せる（「それはこの部分ですね」）。
 - 履歴はブラウザの helper-agent のセッションだけ（メモリ。タブを閉じる・
-  サインインで遷移すると消える）。assistant の `state` に API の content
-  をそのまま入れて往復させ、サーバーは `block()` で検査して再生する。サーバーは
-  何も保存しない。
-- `messages[0]`（文書と最初の選択）はサーバーが毎回同じバイト列で作る
-  （`lib/chat/prompt.ts`）。版は URL の query
-  で固定する。選択は入れない。ここに変わるもの （意見の一覧など）を入れない。
+  サインインで遷移すると消える）。assistant の `state` にモデルのメッセージ
+  （本文と tool call）を入れて往復させ、サーバーは検査して再生する
+  （`assistantFrom`）。サーバーは何も保存しない。
+- `messages[0]`（system: 指示文と番号付きの文書）はサーバーが毎回同じバイト列で
+  作る（`lib/chat/prompt.ts` の `systemMessage`）。版は URL の query
+  で固定する。 選択や意見の一覧など、変わるものを入れない（prefix
+  キャッシュが外れる）。
+- モデルは Workers AI の `@cf/qwen/qwen3.8-27b`（`lib/chat/model.ts`）。Clef と
+  同じ `env.AI`（`lib/chat/ai.ts` の `useAi`）で呼び、API キーは要らない。
+  binding が無いと `503`。メッセージとツールは chat-completions の形。
 - 前段フィルタは Workers AI の Clef（`lib/chat/filter.ts`、`worker.ts` の
   `useAi(env.AI)`）。binding が無い（ローカル・テスト）と素通し。弾いた件数だけ
   `filter_stats` に数え、定型文を返す。
@@ -113,7 +117,7 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - `@kuboon/chat-element` 0.1.0 は、テキスト無しで始まる 2 ラウンド目を前の
   ラウンドの tool 結果より前に並べてしまうので、ラウンドの頭で空の `text`
   を送っている（`chatAgent`）。
-- Claude API を呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
+- モデルを呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
   差し替え、helper-agent の `HelperAgentSession` で通す
   （`controllers/api/chat.test.ts`）。
 - URL と `ChatDraft` の型は `packages/idobata-bot/chat.ts`。
@@ -182,9 +186,6 @@ Deno で catch 不能なエラーになる)。env は top-level await
   本番の鍵は手動の workflow `.github/workflows/rp-signing-key.yml` が CI 上で
   生成して Worker secret に置く（GitHub には残らない）。既にあれば上書きしない
   （`overwrite` を付けて実行すると作り直す）。
-- `ANTHROPIC_API_KEY` — チャットの Claude API キー（Worker secret）。未設定なら
-  チャットは `503`。Cloudflare でしか使わないので、Worker の secret に直接置く
-  （GitHub には置かない）。
 - `LOCAL_DB` — ローカル専用。`router.tsx` が開く SQLite ファイル
   （`deno task dev` は `data/app.db`）。未設定ならメモリ。
 - `SITE_URL` — 静的ビルド専用。公開 origin を渡すと、social card の `og:image`

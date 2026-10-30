@@ -1,26 +1,15 @@
 /**
  * The pre-filter in front of the chat (docs/architecture.md §5): Workers AI's Clef decides whether a
- * message is about the document before the Claude API is called at all, so a reader who is not
+ * message is about the document before the chat model is called at all, so a reader who is not
  * signed in cannot use the bot as a general-purpose chatbot.
  *
  * It lets a message through when in doubt — a missed off-topic message is caught by the system
  * prompt, a wrongly refused opinion is lost.
  */
 
-/** The part of the Workers AI binding this uses. */
-export interface AiBinding {
-  run(model: string, input: unknown): Promise<unknown>;
-}
+import { type AiBinding, getAi } from "./ai.ts";
 
-let current: AiBinding | undefined;
-
-/**
- * Sets the Workers AI binding — `env.AI`, from the Worker's first request. Without one (locally,
- * in tests) every message is let through.
- */
-export function useAi(binding: AiBinding | undefined): void {
-  current = binding;
-}
+export { type AiBinding, useAi } from "./ai.ts";
 
 /** What the filter saw: the document, the selection and the conversation so far, in short. */
 export interface FilterState {
@@ -54,11 +43,11 @@ interface ClefAnswers {
 /**
  * Judges one message.
  *
- * @param ai The binding; {@link useAi}'s by default
+ * @param ai The binding; the one `useAi` set by default
  */
 export async function filterMessage(
   state: FilterState,
-  ai: AiBinding | undefined = current,
+  ai: AiBinding | undefined = getAi(),
 ): Promise<FilterResult> {
   if (!ai) return { ok: true };
   let response: ClefAnswers;
