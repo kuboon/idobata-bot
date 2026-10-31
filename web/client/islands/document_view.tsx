@@ -216,7 +216,8 @@ export const DocumentView = clientEntry(
 
     /**
      * The panel floats above its paragraph, unless that would put it above the top of the page —
-     * then below. Returns it, for scrolling into view.
+     * then below. On a wide screen it sits beside the paragraph instead (`popoverStyle`).
+     * Returns it, for scrolling into view.
      */
     const placePopover = () => {
       const popover = document.querySelector<HTMLElement>("[data-popover]");
@@ -574,6 +575,16 @@ const popoverStyle = css({
   cursor: "auto",
   "& > section": { margin: 0, paddingTop: "1rem" },
   "&[data-below]": { bottom: "auto", top: "calc(100% + 0.5rem)" },
+  // With room beside the text column (44rem, centred), the panel sits to the right of its
+  // paragraph instead of over the text above it.
+  "@media (min-width: 86rem)": {
+    insetInline: "calc(100% + 1.5rem) auto",
+    top: 0,
+    bottom: "auto",
+    width: "min(26rem, calc((100vw - 44rem) / 2 - 3rem))",
+    maxHeight: "min(40rem, 80vh)",
+    "&[data-below]": { top: 0 },
+  },
 });
 
 const closeStyle = css({
