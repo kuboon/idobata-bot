@@ -154,3 +154,8 @@
     --pele-font-mono: var(--font-mono);
   }
 }
+
+/* A page that works rather than reads — the owner's editor — gets a wider measure. */
+html[data-wide] {
+  --content-width: 80rem;
+}

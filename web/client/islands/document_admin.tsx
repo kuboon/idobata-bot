@@ -1,12 +1,15 @@
 /**
  * DocumentAdmin — a document's page for its owner (`/d/:docId/admin`).
  *
- * - The document: title, description and deadline (`PATCH /api/docs/:docId`).
- * - Its text: the next version as a draft, with each block's ID as a marker line, saved and then
- *   released (`/api/docs/:docId/draft`). A block that keeps its ID keeps its opinions.
- * - Its opinions, hidden ones too, each with its moderation record, and the way to hide one or
- *   show it again — always with a reason, which is public (docs/design.md §5).
- * - What the chat's pre-filter turned away, counted per kind over the last 30 days.
+ * Two tabs, on a wide page (`wide` in the layout), the first shown unless the URL says `#text`:
+ *
+ * - 設定と意見: title, description and deadline (`PATCH /api/docs/:docId`); the opinions, hidden
+ *   ones too, each with its moderation record, and the way to hide one or show it again — always
+ *   with a reason, which is public (docs/design.md §5); and what the chat's pre-filter turned
+ *   away, counted per kind over the last 30 days.
+ * - 本文: the next version as a draft, with each block's ID as a marker line, saved and then
+ *   released (`/api/docs/:docId/draft`), beside a live preview. A block that keeps its ID keeps
+ *   its opinions.
  *
  * Like the document page, the build writes it once (`/d/_shell/admin`) and the Worker serves that
  * for every document; the ID comes from the URL and everything else from the API.
@@ -14,12 +17,20 @@
 
 import {
   clientEntry,
+  createElement,
   css,
   type Handle,
   on,
   ref,
+  type RemixNode,
   type SerializableValue,
 } from "@remix-run/component";
+import { markdownToHast } from "@kuboon/md";
+import {
+  type CreateElement,
+  hastToElement,
+} from "@kuboon/md/hast_to_element.ts";
+import type { Root } from "hast";
 import {
   type Opinion,
   OpinionApiError,
@@ -39,8 +50,14 @@ import {
   dangerStyle,
   metaStyle,
   primaryStyle,
+  proseStyle,
 } from "../theme.ts";
 import { color, radius } from "../tokens.ts";
+
+const element = createElement as unknown as CreateElement<RemixNode>;
+
+type Tab = "text" | "manage";
+const TABS: [Tab, string][] = [["manage", "設定と意見"], ["text", "本文"]];
 
 export interface DocumentAdminProps {
   [key: string]: SerializableValue;
@@ -98,6 +115,14 @@ export const DocumentAdmin = clientEntry(
     let draft: Draft | null = null;
     /** Bumped when the draft comes back from the server, so the editor shows its text. */
     let draftGeneration = 0;
+    /** The editor's text as the preview shows it; rendered a moment after typing stops. */
+    let preview: Root | null = null;
+    let previewTimer: ReturnType<typeof setTimeout> | undefined;
+    let previewRun = 0;
+    let tab: Tab = typeof location !== "undefined" &&
+        location.hash === "#text"
+      ? "text"
+      : "manage";
     let editor: HTMLTextAreaElement | null = null;
     let releaseNote: HTMLInputElement | null = null;
     const fields: {
@@ -363,9 +388,46 @@ export const DocumentAdmin = clientEntry(
       );
     };
 
+    const renderPreview = async () => {
+      const run = ++previewRun;
+      const tree = await markdownToHast(editor?.value ?? "");
+      // A later keystroke started a newer render: that one is shown instead.
+      if (run !== previewRun) return;
+      preview = tree;
+      handle.update();
+    };
+    const schedulePreview = (delay = 200) => {
+      clearTimeout(previewTimer);
+      previewTimer = setTimeout(() => void renderPreview(), delay);
+    };
+
+    const switchTab = (next: Tab) => {
+      tab = next;
+      history.replaceState(null, "", next === "text" ? "#text" : "#");
+      handle.update();
+    };
+
+    const tabBar = () => (
+      <div role="tablist" aria-label="管理の項目" mix={tabListStyle}>
+        {TABS.map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id ? "true" : "false"}
+            mix={[
+              tabStyle,
+              on("click", () => switchTab(id)),
+            ]}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+    );
+
     const draftSection = (d: Draft) => (
       <section mix={cardStyle}>
-        <h2>本文</h2>
         <p mix={metaStyle}>
           {d.saved
             ? `第 ${d.number} 版の下書き（未公開）。読者には第 ${d.released} 版が表示されています。`
@@ -378,18 +440,30 @@ export const DocumentAdmin = clientEntry(
           ID の行ごと動かしてください。保存すると、ID の無い段落に新しい ID
           が付きます。
         </p>
-        <textarea
-          key={`d${draftGeneration}`}
-          aria-label="本文（Markdown）"
-          rows={20}
-          spellcheck={false}
-          defaultValue={d.markdown}
-          mix={[
-            inputStyle,
-            editorStyle,
-            ref((node) => (editor = node as HTMLTextAreaElement)),
-          ]}
-        />
+        <div mix={splitStyle}>
+          <textarea
+            key={`d${draftGeneration}`}
+            aria-label="本文（Markdown）"
+            spellcheck={false}
+            defaultValue={d.markdown}
+            mix={[
+              inputStyle,
+              editorStyle,
+              ref((node) => {
+                editor = node as HTMLTextAreaElement;
+                schedulePreview(0);
+              }),
+              on("input", () => schedulePreview()),
+            ]}
+          />
+          <article aria-label="プレビュー" mix={[proseStyle, previewStyle]}>
+            {preview
+              ? preview.children.map((node, i) => (
+                <div key={i}>{hastToElement(node, element) as RemixNode}</div>
+              ))
+              : <p mix={metaStyle}>プレビューを描いています…</p>}
+          </article>
+        </div>
         <label mix={labelStyle}>
           この版の説明（任意。リリース時に記録されます）
           <input
@@ -478,93 +552,101 @@ export const DocumentAdmin = clientEntry(
             )
             : null}
 
-          <section mix={cardStyle}>
-            <h2>文書</h2>
-            <form mix={[formStyle, on<HTMLFormElement>("submit", save)]}>
-              <label mix={labelStyle}>
-                タイトル
-                <input
-                  type="text"
-                  required
-                  maxlength={200}
-                  defaultValue={detail.title}
-                  mix={[
-                    inputStyle,
-                    ref((node) => (fields.title = node as HTMLInputElement)),
-                  ]}
-                />
-              </label>
-              <label mix={labelStyle}>
-                説明
-                <textarea
-                  rows={3}
-                  defaultValue={detail.description}
-                  mix={[
-                    inputStyle,
-                    ref((
-                      node,
-                    ) => (fields.description = node as HTMLTextAreaElement)),
-                  ]}
-                />
-              </label>
-              <label mix={labelStyle}>
-                募集期日（空にすると期限なし。過去の日時にすると今すぐ終了）
-                <input
-                  type="datetime-local"
-                  defaultValue={detail.closesAt
-                    ? localInputValue(new Date(detail.closesAt))
-                    : ""}
-                  mix={[
-                    inputStyle,
-                    ref((node) => (fields.closesAt = node as HTMLInputElement)),
-                  ]}
-                />
-              </label>
-              <div>
-                <button
-                  type="submit"
-                  disabled={saving}
-                  mix={[actionStyle, primaryStyle]}
-                >
-                  保存する
-                </button>
-              </div>
-            </form>
-          </section>
+          {tabBar()}
 
-          {draft ? draftSection(draft) : null}
+          <div role="tabpanel" hidden={tab !== "text"}>
+            {draft ? draftSection(draft) : null}
+          </div>
 
-          <section mix={cardStyle}>
-            <h2>
-              意見（{view.opinions.length} 件
-              {hiddenCount ? `・うち非表示 ${hiddenCount} 件` : ""}）
-            </h2>
-            <p mix={metaStyle}>
-              非表示にした意見は読者に見えなくなりますが、件数と理由は公開されます。
-            </p>
-            {view.opinions.length === 0
-              ? <p>まだ意見はありません。</p>
-              : <ul mix={listStyle}>{view.opinions.map(opinionItem)}</ul>}
-          </section>
+          <div role="tabpanel" hidden={tab !== "manage"}>
+            <section mix={cardStyle}>
+              <h2>文書</h2>
+              <form mix={[formStyle, on<HTMLFormElement>("submit", save)]}>
+                <label mix={labelStyle}>
+                  タイトル
+                  <input
+                    type="text"
+                    required
+                    maxlength={200}
+                    defaultValue={detail.title}
+                    mix={[
+                      inputStyle,
+                      ref((node) => (fields.title = node as HTMLInputElement)),
+                    ]}
+                  />
+                </label>
+                <label mix={labelStyle}>
+                  説明
+                  <textarea
+                    rows={3}
+                    defaultValue={detail.description}
+                    mix={[
+                      inputStyle,
+                      ref((
+                        node,
+                      ) => (fields.description = node as HTMLTextAreaElement)),
+                    ]}
+                  />
+                </label>
+                <label mix={labelStyle}>
+                  募集期日（空にすると期限なし。過去の日時にすると今すぐ終了）
+                  <input
+                    type="datetime-local"
+                    defaultValue={detail.closesAt
+                      ? localInputValue(new Date(detail.closesAt))
+                      : ""}
+                    mix={[
+                      inputStyle,
+                      ref((
+                        node,
+                      ) => (fields.closesAt = node as HTMLInputElement)),
+                    ]}
+                  />
+                </label>
+                <div>
+                  <button
+                    type="submit"
+                    disabled={saving}
+                    mix={[actionStyle, primaryStyle]}
+                  >
+                    保存する
+                  </button>
+                </div>
+              </form>
+            </section>
 
-          <section mix={cardStyle}>
-            <h2>AI が弾いた発言（直近 30 日）</h2>
-            <p mix={metaStyle}>
-              文書と関係ない発言は、AI
-              に届く前に弾いています。件数だけを数え、発言は残していません。
-            </p>
-            {filterTotals.size === 0
-              ? <p>ありません。</p>
-              : (
-                <ul mix={statsStyle}>
-                  {[...filterTotals].map(([kind, count]) => (
-                    <li key={kind}>
-                      {FILTER_KIND_LABELS[kind] ?? kind}: {count} 件
-                    </li>
-                  ))}
-                </ul>
-              )}
-          </section>
+            <section mix={cardStyle}>
+              <h2>
+                意見（{view.opinions.length} 件
+                {hiddenCount ? `・うち非表示 ${hiddenCount} 件` : ""}）
+              </h2>
+              <p mix={metaStyle}>
+                非表示にした意見は読者に見えなくなりますが、件数と理由は公開されます。
+              </p>
+              {view.opinions.length === 0
+                ? <p>まだ意見はありません。</p>
+                : <ul mix={listStyle}>{view.opinions.map(opinionItem)}</ul>}
+            </section>
+
+            <section mix={cardStyle}>
+              <h2>AI が弾いた発言（直近 30 日）</h2>
+              <p mix={metaStyle}>
+                文書と関係ない発言は、AI
+                に届く前に弾いています。件数だけを数え、発言は残していません。
+              </p>
+              {filterTotals.size === 0
+                ? <p>ありません。</p>
+                : (
+                  <ul mix={statsStyle}>
+                    {[...filterTotals].map(([kind, count]) => (
+                      <li key={kind}>
+                        {FILTER_KIND_LABELS[kind] ?? kind}: {count} 件
+                      </li>
+                    ))}
+                  </ul>
+                )}
+            </section>
+          </div>
         </>
       );
     };
@@ -573,9 +655,51 @@ export const DocumentAdmin = clientEntry(
 
 const formStyle = css({ display: "grid", gap: "0.75rem" });
 
+const tabListStyle = css({
+  display: "flex",
+  gap: "0.25rem",
+  borderBottom: `1px solid ${color.border}`,
+  marginBottom: "1rem",
+});
+
+const tabStyle = css({
+  font: "inherit",
+  fontWeight: 600,
+  padding: "0.5rem 1rem",
+  border: "none",
+  borderBottom: "2px solid transparent",
+  marginBottom: "-1px",
+  background: "none",
+  color: color.muted,
+  cursor: "pointer",
+  '&[aria-selected="true"]': {
+    color: color.fg,
+    borderBottomColor: color.accent,
+  },
+});
+
+/** Editor and preview side by side; stacked on a narrow screen. */
+const splitStyle = css({
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: "1rem",
+  "@media (min-width: 56rem)": { gridTemplateColumns: "1fr 1fr" },
+});
+
+const previewStyle = css({
+  minWidth: 0,
+  maxHeight: "75vh",
+  overflowY: "auto",
+  padding: "0.25rem 1rem",
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.md,
+});
+
 const editorStyle = css({
   width: "100%",
   boxSizing: "border-box",
+  minHeight: "75vh",
+  resize: "vertical",
   fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
   fontSize: "0.9rem",
   lineHeight: 1.5,
