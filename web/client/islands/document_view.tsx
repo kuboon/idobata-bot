@@ -29,6 +29,7 @@ import {
 
 import "../lib/share_buttons.ts";
 
+import { type TocEntry, tocFromHast } from "@kuboon/md";
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
 import type { HelperAgentPanel } from "@remix-kbn/helper-agent/client";
 import { openAssistant, type PageSelection } from "../opinions/assistant.ts";
@@ -100,6 +101,8 @@ export const DocumentView = clientEntry(
   function DocumentView(handle: Handle<DocumentViewProps>) {
     let detail: Detail | null = null;
     let blocks: Block[] = [];
+    /** The document's headings, for the table of contents. */
+    let toc: TocEntry[] = [];
     let error = "";
     let store: OpinionStore | null = null;
     let segmentLabels = new Map<string, string>();
@@ -245,6 +248,10 @@ export const DocumentView = clientEntry(
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           detail = ((await response.json()) as { document: Detail }).document;
           blocks = await renderDocument(detail.markdown, detail.segments);
+          toc = tocFromHast({
+            type: "root",
+            children: blocks.map((b) => b.node),
+          });
           segmentLabels = new Map(
             detail.segments.map((s) => [s.key, segmentLabel(s)]),
           );
@@ -345,6 +352,8 @@ export const DocumentView = clientEntry(
               : null}
           </header>
 
+          {toc.length >= 2 ? tableOfContents(toc) : null}
+
           <aside mix={selectionStyle}>
             <span mix={selectionTextStyle}>
               {selected.size === 0
@@ -366,7 +375,7 @@ export const DocumentView = clientEntry(
             </button>
           </aside>
 
-          <article mix={proseStyle}>
+          <article mix={[proseStyle, articleStyle]}>
             {blocks.flatMap(({ segment, node }, i) => {
               const rendered = hastToElement(node, element) as RemixNode;
               if (!segment) return [<div key={`n${i}`}>{rendered}</div>];
@@ -451,6 +460,45 @@ const ownerBarStyle = css({
 const headerStyle = css({
   marginBottom: "1.5rem",
   "& h1": { marginBottom: "0.5rem" },
+});
+
+/** The headings as links, indented by level, folded until opened. */
+function tableOfContents(entries: TocEntry[]) {
+  const top = Math.min(...entries.map((e) => e.depth));
+  return (
+    <details mix={tocStyle}>
+      <summary>目次</summary>
+      <nav aria-label="目次">
+        <ol>
+          {entries.map((e) => (
+            <li
+              key={e.id}
+              style={`padding-inline-start: ${(e.depth - top) * 1.1}rem`}
+            >
+              <a href={`#${e.id}`}>{e.text}</a>
+            </li>
+          ))}
+        </ol>
+      </nav>
+    </details>
+  );
+}
+
+/** A heading jumped to from the table of contents lands below the sticky selection bar. */
+const articleStyle = css({
+  "& :is(h1, h2, h3, h4, h5, h6)": { scrollMarginTop: "4rem" },
+});
+
+const tocStyle = css({
+  marginBlock: "0.75rem",
+  padding: "0.5rem 0.75rem",
+  border: `1px solid ${color.border}`,
+  borderRadius: radius.md,
+  "& summary": { cursor: "pointer", fontWeight: 600 },
+  "& ol": { listStyle: "none", margin: "0.5rem 0 0", padding: 0 },
+  "& li": { paddingBlock: "0.15rem" },
+  "& a": { textDecoration: "none" },
+  "& a:hover": { textDecoration: "underline" },
 });
 
 const selectionStyle = css({
