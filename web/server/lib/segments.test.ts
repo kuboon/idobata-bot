@@ -1,4 +1,4 @@
-import { assertEquals } from "@std/assert";
+import { assertEquals, assertThrows } from "@std/assert";
 
 import { parseSegments, readKeyMarkers, withKeyMarkers } from "./segments.ts";
 
@@ -200,4 +200,17 @@ Deno.test("other HTML comments and markers inside a block stay as written", () =
   const { markdown, keys } = readKeyMarkers(md);
   assertEquals(markdown, md);
   assertEquals(keys, [null, null]);
+});
+
+Deno.test("an ID line between list items is refused, with its line and why", () => {
+  assertThrows(
+    () => readKeyMarkers("<!-- #a -->\n- 一\n<!-- #b -->\n- 二\n"),
+    Error,
+    "3 行目の ID 行がリストの項目の間にあります",
+  );
+  assertThrows(
+    () => readKeyMarkers("前書き。\n\n1. 一\n\n<!-- #b -->\n2. 二\n"),
+    Error,
+    "5 行目の ID 行がリストの項目の間にあります",
+  );
 });
