@@ -124,9 +124,9 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - `@kuboon/chat-element` 0.1.0 は、テキスト無しで始まる 2 ラウンド目を前の
   ラウンドの tool 結果より前に並べてしまうので、ラウンドの頭で空の `text`
   を送っている（`chatAgent`）。
-- AI の返答は Markdown。chat-element 0.1.0 は平文で描くので、描かれた返答の
-  吹き出しを `opinions/chat_markdown.ts` が `@kuboon/md` で描き直す
-  （MutationObserver。chat-element に描画の差し替え口ができたら移す）。
+- AI の返答は Markdown。chat-element の `renderReply` に
+  `opinions/chat_markdown.ts` の `renderMarkdownReply`（`@kuboon/md`）を渡して
+  描く（greeting も通る）。
 - モデルを呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
   差し替え、helper-agent の `HelperAgentSession` で通す
   （`controllers/api/chat.test.ts`）。

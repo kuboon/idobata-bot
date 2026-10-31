@@ -2,7 +2,7 @@
   "version": "5",
   "specifiers": {
     "jsr:@deno/loader@0.5": "0.5.0",
-    "jsr:@kuboon/chat-element@0.1": "0.1.0",
+    "jsr:@kuboon/chat-element@0.1": "0.1.1",
     "jsr:@kuboon/dpop@~0.1.2": "0.1.2",
     "jsr:@kuboon/md@0.9": "0.9.0",
     "jsr:@panva/jose@^6.2.3": "6.2.12",
@@ -57,8 +57,8 @@
     "@deno/loader@0.5.0": {
       "integrity": "a6d94408de5e6bacac404f8f6963c8b8cc278cfd1a878aa2f06b34a083d6bfee"
     },
-    "@kuboon/chat-element@0.1.0": {
-      "integrity": "fd8b9dd0f8403168718031ac2dd070e56ea1f4ef3c5e488f8c5dc6264cf5cf27"
+    "@kuboon/chat-element@0.1.1": {
+      "integrity": "40c1540114842b39218a930e77008120db180cee9ee8056a25ad5cc2b6b64f7a"
     },
     "@kuboon/dpop@0.1.2": {
       "integrity": "30de96c140e7b23e2ebee0145c75adc9dfe04ecbe288546348bd4b619b733add",

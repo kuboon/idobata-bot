@@ -25,7 +25,7 @@ import {
 } from "@remix-kbn/helper-agent/client";
 
 import { sessionStore } from "../session.ts";
-import { CHAT_MARKDOWN_CSS, renderRepliesAsMarkdown } from "./chat_markdown.ts";
+import { CHAT_MARKDOWN_CSS, renderMarkdownReply } from "./chat_markdown.ts";
 import { color, radius } from "../tokens.ts";
 import type { ComposeOutcome, ComposeStore } from "./compose.ts";
 
@@ -162,6 +162,7 @@ export function openAssistant(options: AssistantOptions): HelperAgentPanel {
         }),
     },
     tools: [draftTool(compose), ...selectionTools(selection)],
+    renderReply: renderMarkdownReply,
   });
   const style = chat.dialog.style;
   style.setProperty("--chat-panel-bg", color.bg);
@@ -178,6 +179,5 @@ export function openAssistant(options: AssistantOptions): HelperAgentPanel {
     css.textContent = CHAT_MARKDOWN_CSS;
     document.head.append(css);
   }
-  renderRepliesAsMarkdown(chat.dialog);
   return chat;
 }
