@@ -5,6 +5,8 @@
     "jsr:@kuboon/chat-element@0.1": "0.1.1",
     "jsr:@kuboon/dpop@~0.1.2": "0.1.2",
     "jsr:@kuboon/md@0.9": "0.9.0",
+    "jsr:@kuboon/qrcode-gen@0.1": "0.1.0",
+    "jsr:@kuboon/share-element@0.7": "0.7.0",
     "jsr:@panva/jose@^6.2.3": "6.2.12",
     "jsr:@remix-kbn/assets-deno@0.9": "0.9.0",
     "jsr:@remix-kbn/data-table-d1@*": "0.1.0",
@@ -84,6 +86,15 @@
         "npm:remark-rehype",
         "npm:unified",
         "npm:unist-util-visit"
+      ]
+    },
+    "@kuboon/qrcode-gen@0.1.0": {
+      "integrity": "6d496db08a440a7cca5acad837b97f32b1f974cae83ad7c336c434cca2df5ed6"
+    },
+    "@kuboon/share-element@0.7.0": {
+      "integrity": "d6adbc027e34bf5a07767f5a6f0120202436696cab8d9acbca1c8255ed3cef0c",
+      "dependencies": [
+        "jsr:@kuboon/qrcode-gen"
       ]
     },
     "@panva/jose@6.2.3": {
@@ -2956,6 +2967,7 @@
     "dependencies": [
       "jsr:@kuboon/dpop@~0.1.2",
       "jsr:@kuboon/md@0.9",
+      "jsr:@kuboon/share-element@0.7",
       "jsr:@panva/jose@^6.2.3",
       "jsr:@remix-kbn/assets-deno@0.9",
       "jsr:@remix-kbn/data-table-d1@0.1",
