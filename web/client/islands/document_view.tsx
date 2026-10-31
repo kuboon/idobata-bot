@@ -27,6 +27,8 @@ import {
   hastToElement,
 } from "@kuboon/md/hast_to_element.ts";
 
+import "../lib/share_buttons.ts";
+
 import { type Block, renderDocument, type Segment } from "../lib/document.ts";
 import type { HelperAgentPanel } from "@remix-kbn/helper-agent/client";
 import { openAssistant, type PageSelection } from "../opinions/assistant.ts";
@@ -304,6 +306,12 @@ export const DocumentView = clientEntry(
                 ? `（${formatDateTime(detail.version.releasedAt)}）`
                 : ""}
             </span>
+            <share-buttons
+              url={new URL(
+                routes.document.href({ docId: detail.id }),
+                location.origin,
+              ).href}
+            />
             {isOwner()
               ? (
                 <div
