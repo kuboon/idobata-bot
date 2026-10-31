@@ -1,15 +1,15 @@
 /**
  * DocumentAdmin — a document's page for its owner (`/d/:docId/admin`).
  *
- * Two tabs, on a wide page (`wide` in the layout):
+ * Two tabs, on a wide page (`wide` in the layout), the first shown unless the URL says `#text`:
  *
+ * - 設定と意見: title, description and deadline (`PATCH /api/docs/:docId`); the opinions, hidden
+ *   ones too, each with its moderation record, and the way to hide one or show it again — always
+ *   with a reason, which is public (docs/design.md §5); and what the chat's pre-filter turned
+ *   away, counted per kind over the last 30 days.
  * - 本文: the next version as a draft, with each block's ID as a marker line, saved and then
  *   released (`/api/docs/:docId/draft`), beside a live preview. A block that keeps its ID keeps
  *   its opinions.
- * - 設定と意見: title, description and deadline (`PATCH /api/docs/:docId`), and the rest below.
- * - Its opinions, hidden ones too, each with its moderation record, and the way to hide one or
- *   show it again — always with a reason, which is public (docs/design.md §5).
- * - What the chat's pre-filter turned away, counted per kind over the last 30 days.
  *
  * Like the document page, the build writes it once (`/d/_shell/admin`) and the Worker serves that
  * for every document; the ID comes from the URL and everything else from the API.
@@ -57,7 +57,7 @@ import { color, radius } from "../tokens.ts";
 const element = createElement as unknown as CreateElement<RemixNode>;
 
 type Tab = "text" | "manage";
-const TABS: [Tab, string][] = [["text", "本文"], ["manage", "設定と意見"]];
+const TABS: [Tab, string][] = [["manage", "設定と意見"], ["text", "本文"]];
 
 export interface DocumentAdminProps {
   [key: string]: SerializableValue;
@@ -120,9 +120,9 @@ export const DocumentAdmin = clientEntry(
     let previewTimer: ReturnType<typeof setTimeout> | undefined;
     let previewRun = 0;
     let tab: Tab = typeof location !== "undefined" &&
-        location.hash === "#manage"
-      ? "manage"
-      : "text";
+        location.hash === "#text"
+      ? "text"
+      : "manage";
     let editor: HTMLTextAreaElement | null = null;
     let releaseNote: HTMLInputElement | null = null;
     const fields: {
@@ -403,7 +403,7 @@ export const DocumentAdmin = clientEntry(
 
     const switchTab = (next: Tab) => {
       tab = next;
-      history.replaceState(null, "", next === "manage" ? "#manage" : "#");
+      history.replaceState(null, "", next === "text" ? "#text" : "#");
       handle.update();
     };
 
