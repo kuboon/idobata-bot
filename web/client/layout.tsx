@@ -44,6 +44,8 @@ import { color, contentWidth } from "./tokens.ts";
 /** What every page hands the shell. */
 export interface LayoutProps {
   title: string;
+  /** A wider measure, for a page that works rather than reads (an editor). */
+  wide?: boolean;
   description?: string;
   /**
    * The page's social card — the URL of the PNG `server/og/` draws for it.
@@ -111,7 +113,7 @@ export function Layout(handle: Handle<LayoutProps>) {
     const props = handle.props;
 
     return (
-      <html lang="ja">
+      <html lang="ja" data-wide={props.wide ? "" : undefined}>
         <head>
           <meta charset="utf-8" />
           <meta name="viewport" content="width=device-width, initial-scale=1" />

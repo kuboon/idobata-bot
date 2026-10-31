@@ -144,6 +144,7 @@ const top = createController(routes, {
         <Layout
           title={DocumentAdminPage.title}
           description={DocumentAdminPage.description}
+          wide
           image={null}
           script={clientRuntime}
         >
