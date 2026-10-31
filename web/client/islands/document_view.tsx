@@ -75,6 +75,33 @@ function docIdFromLocation(): string | null {
 
 const element = createElement as unknown as CreateElement<RemixNode>;
 
+/**
+ * The selection in the URL: `#p=key1,key2`, so a reload or a shared link selects the same
+ * paragraphs. `p=` keeps it apart from the table of contents' heading anchors (`#見出し-`).
+ */
+const SELECTION_HASH = "#p=";
+
+/** The segment keys in the URL's hash, if it holds a selection. */
+function selectionFromHash(): string[] {
+  const hash = globalThis.location?.hash ?? "";
+  if (!hash.startsWith(SELECTION_HASH)) return [];
+  return decodeURIComponent(hash.slice(SELECTION_HASH.length)).split(",")
+    .filter(Boolean);
+}
+
+/** Puts the selection in the URL, in place (no history entry), or takes it out. */
+function writeSelectionHash(keys: string[]): void {
+  const hash = keys.length ? `${SELECTION_HASH}${keys.join(",")}` : "";
+  if (location.hash === hash) return;
+  // Only ever replace our own hash: a heading anchor stays until the selection changes.
+  if (!hash && !location.hash.startsWith(SELECTION_HASH)) return;
+  history.replaceState(
+    history.state,
+    "",
+    `${location.pathname}${location.search}${hash}`,
+  );
+}
+
 /** Where the owner's 管理 switch is remembered, per browser. Off unless they turned it on. */
 const MANAGE_KEY = "idobata:manage";
 
@@ -107,6 +134,15 @@ export const DocumentView = clientEntry(
     let store: OpinionStore | null = null;
     let segmentLabels = new Map<string, string>();
     const selected = new Set<string>();
+    /** After the selection changes: the URL follows it, and the page redraws. */
+    const selectionChanged = () => {
+      writeSelectionHash(
+        (detail?.segments ?? []).flatMap((s) =>
+          selected.has(s.key) ? [s.key] : []
+        ),
+      );
+      handle.update();
+    };
     const compose = new ComposeStore();
     /** The chat in the corner — one per page, made on first use. */
     let assistant: HelperAgentPanel | null = null;
@@ -155,7 +191,7 @@ export const DocumentView = clientEntry(
         });
         selected.clear();
         for (const { segment } of picked) selected.add(segment.key);
-        handle.update();
+        selectionChanged();
         setTimeout(() => {
           placePopover();
           document
@@ -205,7 +241,7 @@ export const DocumentView = clientEntry(
         selected.clear();
         selected.add(key);
       }
-      handle.update();
+      selectionChanged();
       setTimeout(() =>
         placePopover()?.scrollIntoView({
           behavior: "smooth",
@@ -232,7 +268,7 @@ export const DocumentView = clientEntry(
     /** Closes the panel by clearing the selection. */
     const closePanel = () => {
       selected.clear();
-      handle.update();
+      selectionChanged();
     };
 
     if (typeof document !== "undefined") {
@@ -267,10 +303,23 @@ export const DocumentView = clientEntry(
             signal: handle.signal,
           });
           reload();
+          // The selection the URL was left with, if its paragraphs are in this version.
+          const keys = new Set(detail.segments.map((s) => s.key));
+          for (const key of selectionFromHash()) {
+            if (keys.has(key)) selected.add(key);
+          }
         } catch (e) {
           error = (e as Error).message;
         }
         handle.update();
+        if (selected.size > 0) {
+          setTimeout(() => {
+            placePopover();
+            const first = detail?.segments.find((s) => selected.has(s.key));
+            document.querySelector(`[data-segment="${first?.key}"]`)
+              ?.scrollIntoView({ block: "center" });
+          });
+        }
       })();
     }
 
@@ -367,7 +416,7 @@ export const DocumentView = clientEntry(
                 actionStyle,
                 on("click", () => {
                   selected.clear();
-                  handle.update();
+                  selectionChanged();
                 }),
               ]}
               style={selected.size === 0 ? "visibility: hidden" : undefined}
