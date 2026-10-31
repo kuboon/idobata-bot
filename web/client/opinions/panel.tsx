@@ -4,6 +4,9 @@
  * - Nothing selected: every opinion on the document.
  * - Segments selected: the opinions about any of them.
  *
+ * In the owner's 管理 mode (`managing`) the hidden opinions are listed too, each with its
+ * moderation record and a button to hide it or show it again, with a reason that is public.
+ *
  * Under them, 「AI と対話する」 shows the chat in the corner (`assistant.ts`), which reads the
  * selection. Opinions are only written through the AI: it weighs them against the ones already
  * there and opens the posting dialog (`post_dialog.tsx`) with its draft filled in.
@@ -40,6 +43,8 @@ export interface OpinionPanelProps {
   open: boolean;
   /** Starts (or shows) the chat about the selection. */
   onTalk(): void;
+  /** The owner's 管理 mode: hidden opinions shown, and the way to hide or show one. */
+  managing: boolean;
 }
 
 /** A short, one-line label for a stance on a target. */
@@ -80,12 +85,62 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
     handle.update();
   };
 
+  const moderate = (opinion: Opinion) => {
+    const hide = opinion.status !== "hidden";
+    const reason = globalThis.prompt(
+      hide
+        ? `「${opinion.title}」を非表示にする理由（公開されます）`
+        : `「${opinion.title}」を再表示する理由（公開されます）`,
+    )?.trim();
+    if (!reason) return;
+    void handle.props.store
+      .moderate(opinion.id, hide ? "hide" : "unhide", reason)
+      .catch(fail);
+  };
+
+  /** The owner's controls on one opinion: its moderation record, and hide / show. */
+  const moderation = (opinion: Opinion) => {
+    const log = handle.props.store.moderation.filter((l) =>
+      l.opinionId === opinion.id
+    );
+    const hidden = opinion.status === "hidden";
+    return (
+      <div mix={moderationStyle}>
+        {log.length > 0
+          ? (
+            <ul mix={logStyle}>
+              {log.map((l) => (
+                <li key={l.id}>
+                  {formatDateTime(l.createdAt)}{" "}
+                  {l.action === "hide" ? "非表示" : "再表示"}: {l.reason}
+                </li>
+              ))}
+            </ul>
+          )
+          : null}
+        <button
+          type="button"
+          mix={[
+            actionStyle,
+            hidden ? undefined : dangerStyle,
+            on("click", () => moderate(opinion)),
+          ]}
+        >
+          {hidden ? "再表示する" : "非表示にする"}
+        </button>
+      </div>
+    );
+  };
+
   const card = (opinion: Opinion) => {
-    const { store, segmentLabels, open } = handle.props;
+    const { store, segmentLabels, open, managing } = handle.props;
     const signedIn = sessionStore.userId !== null;
     return (
-      <li key={opinion.id} mix={opinionStyle}>
+      <li key={opinion.id} data-status={opinion.status} mix={opinionStyle}>
         <strong>{opinion.title}</strong>
+        {opinion.status === "hidden"
+          ? <span mix={badgeStyle}>非表示</span>
+          : null}
         <ul mix={targetsStyle}>
           {opinion.targets.map((t) => (
             <li key={JSON.stringify(t)} data-stance={t.stance}>
@@ -139,6 +194,7 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
             </div>
           )
           : null}
+        {managing ? moderation(opinion) : null}
       </li>
     );
   };
@@ -178,7 +234,7 @@ export function OpinionPanel(handle: Handle<OpinionPanelProps>) {
         {shown.length === 0
           ? <p mix={metaStyle}>まだ意見はありません。</p>
           : <ul mix={listStyle}>{shown.map(card)}</ul>}
-        {store.hiddenCount
+        {store.hiddenCount && !handle.props.managing
           ? (
             <p mix={metaStyle}>
               オーナーが非表示にした意見が {store.hiddenCount} 件あります。
@@ -219,6 +275,32 @@ const opinionStyle = css({
   paddingBlock: "0.75rem",
   borderTop: `1px solid ${color.border}`,
   "& > p": { marginBlock: "0.35rem" },
+  '&[data-status="hidden"] > :not(div)': { opacity: 0.6 },
+});
+
+const badgeStyle = css({
+  marginInlineStart: "0.5rem",
+  padding: "0.05rem 0.5rem",
+  borderRadius: "999px",
+  border: `1px solid ${color.border}`,
+  color: color.muted,
+  fontSize: "0.75rem",
+});
+
+const moderationStyle = css({
+  display: "grid",
+  justifyItems: "start",
+  gap: "0.35rem",
+  marginTop: "0.5rem",
+  paddingTop: "0.5rem",
+  borderTop: `1px dashed ${color.border}`,
+});
+
+const logStyle = css({
+  margin: 0,
+  paddingLeft: "1.1rem",
+  color: color.muted,
+  fontSize: "0.85rem",
 });
 
 const targetsStyle = css({
