@@ -150,24 +150,41 @@ export function readKeyMarkers(
   const source = markdown.replace(/\r\n?/g, "\n");
   const tree = parser.parse(source);
   const keys: (string | null)[] = [];
-  const cuts: { from: number; to: number }[] = [];
+  const cuts: { from: number; to: number; betweenLists: boolean }[] = [];
   let pending: string | null = null;
 
-  for (const node of tree.children) {
+  tree.children.forEach((node, i) => {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
-    if (start === undefined || end === undefined) continue;
+    if (start === undefined || end === undefined) return;
     const marker = node.type === "html" ? MARKER.exec(node.value.trim()) : null;
     if (marker) {
       pending = marker[1];
       const from = source.lastIndexOf("\n", start - 1) + 1;
-      cuts.push({ from, to: source[end] === "\n" ? end + 1 : end });
+      cuts.push({
+        from,
+        to: source[end] === "\n" ? end + 1 : end,
+        betweenLists: tree.children[i - 1]?.type === "list" &&
+          tree.children[i + 1]?.type === "list",
+      });
     } else if (kindOf(node) !== null) {
       keys.push(pending);
       pending = null;
     }
-  }
+  });
 
+  const clean = withoutCuts(source, cuts);
+  if (parseSegments(clean).length !== keys.length) {
+    throw new Error(markerError(source, cuts));
+  }
+  return { markdown: clean, keys };
+}
+
+/** The source with these lines taken out. */
+function withoutCuts(
+  source: string,
+  cuts: readonly { from: number; to: number }[],
+): string {
   let clean = "";
   let at = 0;
   for (const cut of cuts) {
@@ -176,12 +193,27 @@ export function readKeyMarkers(
     if (clean !== "" && !clean.endsWith("\n\n")) clean += "\n";
     at = cut.to;
   }
-  clean += source.slice(at);
+  return clean + source.slice(at);
+}
 
-  if (parseSegments(clean).length !== keys.length) {
-    throw new Error("removing the ID lines changed the document's blocks");
-  }
-  return { markdown: clean, keys };
+/**
+ * Why the ID lines cannot be taken out, for the owner: the first one that joins the blocks around
+ * it when taken out alone, by line number. Between two lists — one list split by the ID line —
+ * is the usual case.
+ */
+function markerError(
+  source: string,
+  cuts: readonly { from: number; to: number; betweenLists: boolean }[],
+): string {
+  const count = parseSegments(source).length;
+  const culprit =
+    cuts.find((cut) =>
+      parseSegments(withoutCuts(source, [cut])).length !== count
+    ) ?? cuts[0];
+  const line = source.slice(0, culprit?.from ?? 0).split("\n").length;
+  return culprit?.betweenLists
+    ? `${line} 行目の ID 行がリストの項目の間にあります。リストは全体で 1 段落なので、ID 行はリストの前にだけ置けます。`
+    : `${line} 行目の ID 行を取り除くと、前後の段落がつながってしまいます。ID 行は段落の直前の行に置いてください。`;
 }
 
 /**
