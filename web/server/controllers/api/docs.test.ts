@@ -180,3 +180,164 @@ Deno.test("a long document registers within D1's 100 parameters per statement", 
   assertEquals(document.segments.length, 40);
   assertEquals(document.segments[39].text, "段落 40。");
 });
+
+const send = (
+  method: string,
+  body: unknown,
+  headers: Record<string, string>,
+) => ({
+  method,
+  headers: { ...headers, "content-type": "application/json" },
+  body: body === undefined ? undefined : JSON.stringify(body),
+});
+
+Deno.test("the owner writes the next version with the keys in view, and releases it", async () => {
+  const { fetchDpop, signedIn } = await setup();
+  const auth = await signedIn();
+  const created = await fetchDpop(
+    appUrl("/api/docs"),
+    post({ title: "t", markdown: MARKDOWN }, auth),
+  );
+  const { id } = await created.json();
+  const v1 = (await (await fetchDpop(appUrl(`/api/docs/${id}`))).json())
+    .document;
+  const [heading, first] = v1.segments as { key: string }[];
+
+  // Nothing saved yet: the latest release, marked, to start from.
+  const start = (await (await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    { headers: auth },
+  )).json()).draft;
+  assertEquals([start.number, start.saved, start.released], [2, false, 1]);
+  assert(start.markdown.startsWith(`<!-- #${heading.key} -->\n# 計画案\n`));
+
+  // Rewrite the first paragraph, add one without a key, drop the rest.
+  const saved = await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    send("PUT", {
+      markdown: `<!-- #${heading.key} -->
+# 計画案
+
+<!-- #${first.key} -->
+第一段落を直した。
+
+新しい段落。
+`,
+    }, auth),
+  );
+  assertEquals(saved.status, 200);
+  const draft = (await saved.json()).draft;
+  assertEquals([draft.number, draft.saved], [2, true]);
+  const newKey = /<!-- #([\w-]+) -->\n新しい段落/.exec(draft.markdown)?.[1];
+  assert(newKey && newKey !== heading.key && newKey !== first.key);
+
+  // Readers still see version 1 until it is released.
+  const before = (await (await fetchDpop(appUrl(`/api/docs/${id}`))).json())
+    .document;
+  assertEquals(before.version.number, 1);
+
+  const released = await fetchDpop(
+    appUrl(`/api/docs/${id}/draft/release`),
+    send("POST", { releaseNote: "段落を直した" }, auth),
+  );
+  assertEquals(released.status, 200);
+  const v2 = (await released.json()).document;
+  assertEquals(v2.version.number, 2);
+  assertEquals(v2.versions.map((v: { number: number }) => v.number), [1, 2]);
+  assertEquals(v2.markdown, "# 計画案\n\n第一段落を直した。\n\n新しい段落。\n");
+  assertEquals(
+    v2.segments.map((s: { key: string; text: string }) => [s.key, s.text]),
+    [
+      [heading.key, "# 計画案"],
+      [first.key, "第一段落を直した。"],
+      [newKey, "新しい段落。"],
+    ],
+  );
+  // Version 1 stays readable.
+  const old = (await (await fetchDpop(appUrl(`/api/docs/${id}?version=1`)))
+    .json()).document;
+  assertEquals(old.markdown, MARKDOWN);
+
+  // No draft left; the next one would be version 3.
+  const next = (await (await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    { headers: auth },
+  )).json()).draft;
+  assertEquals([next.number, next.saved], [3, false]);
+  const again = await fetchDpop(
+    appUrl(`/api/docs/${id}/draft/release`),
+    send("POST", {}, auth),
+  );
+  assertEquals(again.status, 409);
+  await again.body?.cancel();
+});
+
+Deno.test("a draft is replaced on each save and can be thrown away", async () => {
+  const { fetchDpop, signedIn } = await setup();
+  const auth = await signedIn();
+  const { id } = await (await fetchDpop(
+    appUrl("/api/docs"),
+    post({ title: "t", markdown: "本文" }, auth),
+  )).json();
+  const save = (markdown: string) =>
+    fetchDpop(
+      appUrl(`/api/docs/${id}/draft`),
+      send("PUT", { markdown }, auth),
+    ).then((r) => r.json());
+
+  // A key copied onto a second block is the first one's; the copy gets a new one.
+  const first = (await save("<!-- #k1 -->\nA\n\n<!-- #k1 -->\nB\n")).draft;
+  assertEquals(first.number, 2);
+  assert(first.markdown.startsWith("<!-- #k1 -->\nA\n\n<!-- #"));
+  assert(!first.markdown.endsWith("<!-- #k1 -->\nB\n"));
+  const second = (await save("<!-- #k1 -->\nC\n")).draft;
+  assertEquals([second.number, second.markdown], [2, "<!-- #k1 -->\nC\n"]);
+
+  const empty = await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    send("PUT", { markdown: "<!-- #k1 -->\n" }, auth),
+  );
+  assertEquals(empty.status, 400);
+  await empty.body?.cancel();
+
+  const discarded = await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    send("DELETE", undefined, auth),
+  );
+  assertEquals(discarded.status, 204);
+  const after = (await (await fetchDpop(
+    appUrl(`/api/docs/${id}/draft`),
+    { headers: auth },
+  )).json()).draft;
+  assertEquals([after.number, after.saved], [2, false]);
+});
+
+Deno.test("only the owner sees or writes the draft", async () => {
+  const { fetchDpop, signedIn } = await setup();
+  const { id } = await (await fetchDpop(
+    appUrl("/api/docs"),
+    post({ title: "t", markdown: "本文" }, await signedIn()),
+  )).json();
+  const other = await signedIn("someone-else", "他人");
+  for (
+    const init of [
+      { headers: other },
+      send("PUT", { markdown: "x" }, other),
+      send("DELETE", undefined, other),
+      send("POST", {}, other),
+    ]
+  ) {
+    const path = init === undefined || !("method" in init) ||
+        init.method !== "POST"
+      ? `/api/docs/${id}/draft`
+      : `/api/docs/${id}/draft/release`;
+    const res = await fetchDpop(appUrl(path), init);
+    assertEquals(res.status, 403, path);
+    await res.body?.cancel();
+  }
+  const missing = await fetchDpop(appUrl("/api/docs/nope/draft"), {
+    headers: other,
+  });
+  assertEquals(missing.status, 404);
+  await missing.body?.cancel();
+});

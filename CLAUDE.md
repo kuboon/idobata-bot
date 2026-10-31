@@ -53,6 +53,13 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
   （`web/server/lib/segments.ts`）。分割は `@kuboon/md` と同じ remark-parse +
   remark-gfm
   のトップレベルのノードで、段落の本文は原文をそのまま切り出したもの。
+- 段落の key（`segment_key`）は版をまたいで同じ段落を指す。オーナーが編集する
+  Markdown には段落の前の行に `<!-- #key -->` として見せ、保存時に読み取って
+  取り除く（`withKeyMarkers` / `readKeyMarkers`）。key の無い段落には振る。
+- 次の版は下書き（文書ごとに 1 つ）として `/api/docs/:docId/draft` で保存し、
+  `/draft/release`
+  で公開する（`lib/documents.ts`）。読者・チャット・意見の対象は
+  公開済みの版だけ。
 - 表示は `@kuboon/md` で文書全体を一度に描画し、トップレベルの要素を原文中の
   位置で段落に対応づける（`web/client/lib/document.ts`）。段落ごとに別々に
   描画しないのは、参照リンクや脚注を解決するため。
@@ -117,6 +124,9 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
 - `@kuboon/chat-element` 0.1.0 は、テキスト無しで始まる 2 ラウンド目を前の
   ラウンドの tool 結果より前に並べてしまうので、ラウンドの頭で空の `text`
   を送っている（`chatAgent`）。
+- AI の返答は Markdown。chat-element の `renderReply` に
+  `opinions/chat_markdown.ts` の `renderMarkdownReply`（`@kuboon/md`）を渡して
+  描く（greeting も通る）。
 - モデルを呼ぶのは `lib/chat/model.ts` だけ。テストは `ChatModel` を台本で
   差し替え、helper-agent の `HelperAgentSession` で通す
   （`controllers/api/chat.test.ts`）。

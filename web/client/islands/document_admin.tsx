@@ -2,6 +2,8 @@
  * DocumentAdmin — a document's page for its owner (`/d/:docId/admin`).
  *
  * - The document: title, description and deadline (`PATCH /api/docs/:docId`).
+ * - Its text: the next version as a draft, with each block's ID as a marker line, saved and then
+ *   released (`/api/docs/:docId/draft`). A block that keeps its ID keeps its opinions.
  * - Its opinions, hidden ones too, each with its moderation record, and the way to hide one or
  *   show it again — always with a reason, which is public (docs/design.md §5).
  * - What the chat's pre-filter turned away, counted per kind over the last 30 days.
@@ -42,6 +44,14 @@ import { color, radius } from "../tokens.ts";
 
 export interface DocumentAdminProps {
   [key: string]: SerializableValue;
+}
+
+/** The next version as the owner edits it (`GET /api/docs/:docId/draft`). */
+interface Draft {
+  number: number;
+  markdown: string;
+  saved: boolean;
+  released: number;
 }
 
 interface Detail {
@@ -85,6 +95,11 @@ export const DocumentAdmin = clientEntry(
     let notice: { kind: "success" | "error"; text: string } | null = null;
     let saving = false;
     let loadedFor: string | null = null;
+    let draft: Draft | null = null;
+    /** Bumped when the draft comes back from the server, so the editor shows its text. */
+    let draftGeneration = 0;
+    let editor: HTMLTextAreaElement | null = null;
+    let releaseNote: HTMLInputElement | null = null;
     const fields: {
       title?: HTMLInputElement;
       description?: HTMLTextAreaElement;
@@ -106,6 +121,8 @@ export const DocumentAdmin = clientEntry(
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         detail = ((await response.json()) as { document: Detail }).document;
         view = await opinionClient.manage(docId);
+        draft = await draftRequest("GET");
+        draftGeneration++;
         error = "";
       } catch (e) {
         error = e instanceof OpinionApiError && e.status === 403
@@ -161,6 +178,101 @@ export const DocumentAdmin = clientEntry(
         saving = false;
         handle.update();
       }
+    };
+
+    /** One call to the draft API; its `draft`, or `null` for one that answers with none. */
+    const draftRequest = async (
+      method: "GET" | "PUT" | "DELETE",
+      body?: unknown,
+    ): Promise<Draft | null> => {
+      const response = await sessionStore.apiFetch(
+        routes.api.docs.draft.href({ docId: docId! }),
+        body === undefined ? { method } : {
+          method,
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(body),
+        },
+      );
+      if (response.status === 204) return null;
+      const json = await response.json().catch(() => ({})) as {
+        draft?: Draft;
+        error?: string;
+      };
+      if (!response.ok) {
+        throw new Error(json.error ?? `HTTP ${response.status}`);
+      }
+      return json.draft ?? null;
+    };
+
+    /** Runs a step on the draft, reporting how it went. */
+    const draftStep = async (step: () => Promise<string>) => {
+      saving = true;
+      notice = null;
+      handle.update();
+      try {
+        notice = { kind: "success", text: await step() };
+      } catch (e) {
+        notice = {
+          kind: "error",
+          text: `できませんでした: ${(e as Error).message}`,
+        };
+      } finally {
+        saving = false;
+        handle.update();
+      }
+    };
+
+    const saveDraft = () =>
+      draftRequest("PUT", { markdown: editor?.value ?? "" }).then((d) => {
+        draft = d;
+        draftGeneration++;
+      });
+
+    const onSaveDraft = () =>
+      draftStep(async () => {
+        await saveDraft();
+        return `第 ${draft?.number} 版の下書きを保存しました。ID の無かった段落には ID を付けました。`;
+      });
+
+    const onRelease = () => {
+      if (
+        !globalThis.confirm(
+          `第 ${draft?.number} 版としてリリースします。読者にはこの版が表示されます。よろしいですか？`,
+        )
+      ) return;
+      void draftStep(async () => {
+        await saveDraft();
+        const response = await sessionStore.apiFetch(
+          routes.api.docs.release.href({ docId: docId! }),
+          {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ releaseNote: releaseNote?.value ?? "" }),
+          },
+        );
+        const json = await response.json().catch(() => ({})) as {
+          document?: Detail;
+          error?: string;
+        };
+        if (!response.ok || !json.document) {
+          throw new Error(json.error ?? `HTTP ${response.status}`);
+        }
+        detail = json.document;
+        const number = draft?.number;
+        draft = await draftRequest("GET");
+        draftGeneration++;
+        return `第 ${number} 版をリリースしました。`;
+      });
+    };
+
+    const onDiscard = () => {
+      if (!globalThis.confirm("下書きを破棄します。よろしいですか？")) return;
+      void draftStep(async () => {
+        await draftRequest("DELETE");
+        draft = await draftRequest("GET");
+        draftGeneration++;
+        return "下書きを破棄しました。";
+      });
     };
 
     const moderate = async (opinion: Opinion) => {
@@ -250,6 +362,74 @@ export const DocumentAdmin = clientEntry(
         </li>
       );
     };
+
+    const draftSection = (d: Draft) => (
+      <section mix={cardStyle}>
+        <h2>本文</h2>
+        <p mix={metaStyle}>
+          {d.saved
+            ? `第 ${d.number} 版の下書き（未公開）。読者には第 ${d.released} 版が表示されています。`
+            : `第 ${d.released} 版が公開中です。書き換えて保存すると、第 ${d.number} 版の下書きになります。`}
+        </p>
+        <p mix={metaStyle}>
+          各段落の前の行の <code>{"<!-- #… -->"}</code>{" "}
+          はその段落の ID です。ID
+          を残した段落の意見は、新しい版でもその段落に付いたままです。段落を動かすときは
+          ID の行ごと動かしてください。保存すると、ID の無い段落に新しい ID
+          が付きます。
+        </p>
+        <textarea
+          key={`d${draftGeneration}`}
+          aria-label="本文（Markdown）"
+          rows={20}
+          spellcheck={false}
+          defaultValue={d.markdown}
+          mix={[
+            inputStyle,
+            editorStyle,
+            ref((node) => (editor = node as HTMLTextAreaElement)),
+          ]}
+        />
+        <label mix={labelStyle}>
+          この版の説明（任意。リリース時に記録されます）
+          <input
+            type="text"
+            maxlength={2000}
+            mix={[
+              inputStyle,
+              ref((node) => (releaseNote = node as HTMLInputElement)),
+            ]}
+          />
+        </label>
+        <div mix={buttonsStyle}>
+          <button
+            type="button"
+            disabled={saving}
+            mix={[actionStyle, on("click", () => void onSaveDraft())]}
+          >
+            下書きを保存
+          </button>
+          <button
+            type="button"
+            disabled={saving}
+            mix={[actionStyle, primaryStyle, on("click", onRelease)]}
+          >
+            保存してリリース
+          </button>
+          {d.saved
+            ? (
+              <button
+                type="button"
+                disabled={saving}
+                mix={[actionStyle, dangerStyle, on("click", onDiscard)]}
+              >
+                下書きを破棄
+              </button>
+            )
+            : null}
+        </div>
+      </section>
+    );
 
     return () => {
       if (typeof document === "undefined" || !sessionStore.ready) {
@@ -352,6 +532,8 @@ export const DocumentAdmin = clientEntry(
             </form>
           </section>
 
+          {draft ? draftSection(draft) : null}
+
           <section mix={cardStyle}>
             <h2>
               意見（{view.opinions.length} 件
@@ -390,6 +572,16 @@ export const DocumentAdmin = clientEntry(
 );
 
 const formStyle = css({ display: "grid", gap: "0.75rem" });
+
+const editorStyle = css({
+  width: "100%",
+  boxSizing: "border-box",
+  fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+  fontSize: "0.9rem",
+  lineHeight: 1.5,
+});
+
+const buttonsStyle = css({ display: "flex", flexWrap: "wrap", gap: "0.5rem" });
 
 const labelStyle = css({ display: "grid", gap: "0.3rem", fontWeight: 600 });
 

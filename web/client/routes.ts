@@ -59,6 +59,14 @@ export const routes = route("", {
       show: get("/:docId"),
       /** The owner only: title, description and deadline. */
       update: patch("/:docId"),
+      /** The owner only: the next version being written, or the latest release to start from. */
+      draft: get("/:docId/draft"),
+      /** The owner only: saves the draft; segments without a key get one. */
+      saveDraft: put("/:docId/draft"),
+      /** The owner only: throws the draft away. */
+      discardDraft: del("/:docId/draft"),
+      /** The owner only: makes the draft the latest version. */
+      release: post("/:docId/draft/release"),
     }),
     /**
      * The opinion service (③ in docs/design.md §2): opinions, their targets and supports. It knows
