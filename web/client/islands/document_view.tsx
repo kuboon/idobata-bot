@@ -39,7 +39,13 @@ import { OpinionStore } from "../opinions/store.ts";
 import { deadlineLabel, formatDateTime } from "../lib/format.ts";
 import { DOCUMENT_SHELL_ID, routes } from "../routes.ts";
 import { sessionStore } from "../session.ts";
-import { actionStyle, alertStyle, metaStyle, proseStyle } from "../theme.ts";
+import {
+  actionStyle,
+  alertStyle,
+  metaStyle,
+  primaryStyle,
+  proseStyle,
+} from "../theme.ts";
 import { color, radius } from "../tokens.ts";
 
 export interface DocumentViewProps {
@@ -68,6 +74,17 @@ function docIdFromLocation(): string | null {
 
 const element = createElement as unknown as CreateElement<RemixNode>;
 
+/** Where the owner's 管理 switch is remembered, per browser. Off unless they turned it on. */
+const MANAGE_KEY = "idobata:manage";
+
+function readManage(): boolean {
+  try {
+    return localStorage.getItem(MANAGE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /** A segment's short name for the panel: a heading's text, or the start of the block. */
 function segmentLabel(segment: Segment): string {
   const plain = segment.text
@@ -90,6 +107,35 @@ export const DocumentView = clientEntry(
     const compose = new ComposeStore();
     /** The chat in the corner — one per page, made on first use. */
     let assistant: HelperAgentPanel | null = null;
+    /** The owner's choice of 管理 mode; it counts only while they are the owner. */
+    let manageWanted = typeof localStorage === "undefined"
+      ? false
+      : readManage();
+    const isOwner = () =>
+      detail !== null && sessionStore.userId === detail.owner.id;
+    /**
+     * 管理 mode: the owner, having turned it on. It only changes what the page shows — the API
+     * checks the owner on every request either way.
+     */
+    const managing = () => isOwner() && manageWanted;
+
+    /** Reads the opinions again, in the view the page is now in. */
+    const reload = () => {
+      if (!store) return;
+      store.managing = managing();
+      void store.load();
+    };
+
+    const toggleManage = () => {
+      manageWanted = !manageWanted;
+      try {
+        localStorage.setItem(MANAGE_KEY, manageWanted ? "1" : "0");
+      } catch {
+        // Not remembered; it still applies to this page.
+      }
+      reload();
+      handle.update();
+    };
 
     /** The selection by block number, for the AI's tools. */
     const pageSelection: PageSelection = {
@@ -207,11 +253,12 @@ export const DocumentView = clientEntry(
           store.addEventListener("change", () => handle.update(), {
             signal: handle.signal,
           });
-          // Signing in or out changes which opinions are yours and which you support.
-          sessionStore.addEventListener("change", () => void store?.load(), {
+          // Signing in or out changes which opinions are yours and which you support, and
+          // whether you are the owner.
+          sessionStore.addEventListener("change", reload, {
             signal: handle.signal,
           });
-          void store.load();
+          reload();
         } catch (e) {
           error = (e as Error).message;
         }
@@ -241,6 +288,7 @@ export const DocumentView = clientEntry(
             segmentLabels={segmentLabels}
             open={detail.open}
             onTalk={talk}
+            managing={managing()}
           />
         )
         : null;
@@ -264,13 +312,35 @@ export const DocumentView = clientEntry(
                 location.origin,
               ).href}
             />
-            {sessionStore.userId === detail.owner.id
+            {isOwner()
               ? (
-                <p>
+                <div
+                  mix={ownerBarStyle}
+                  data-managing={managing() ? "" : undefined}
+                >
+                  <button
+                    type="button"
+                    aria-pressed={managing() ? "true" : "false"}
+                    mix={[
+                      actionStyle,
+                      managing() ? primaryStyle : undefined,
+                      on("click", toggleManage),
+                    ]}
+                  >
+                    管理
+                  </button>
+                  {managing()
+                    ? (
+                      <span mix={metaStyle}>
+                        管理モード:
+                        非表示の意見も出し、非表示・再表示ができます。
+                      </span>
+                    )
+                    : null}
                   <a href={routes.documentAdmin.href({ docId: detail.id })}>
-                    この文書を管理する
+                    文書の設定・本文の編集
                   </a>
-                </p>
+                </div>
               )
               : null}
           </header>
@@ -365,6 +435,18 @@ export const DocumentView = clientEntry(
     };
   },
 );
+
+const ownerBarStyle = css({
+  display: "flex",
+  flexWrap: "wrap",
+  alignItems: "center",
+  gap: "0.5rem 0.75rem",
+  marginTop: "0.5rem",
+  padding: "0.4rem 0.6rem",
+  borderRadius: radius.md,
+  border: "1px dashed transparent",
+  "&[data-managing]": { borderColor: color.accent },
+});
 
 const headerStyle = css({
   marginBottom: "1.5rem",
