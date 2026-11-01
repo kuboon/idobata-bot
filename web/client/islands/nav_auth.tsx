@@ -4,7 +4,7 @@
  * Rendered into the shell (client/layout.tsx), so it hydrates on every page
  * and reflects the live DPoP session state:
  *   - signed out → a "Sign In" button that redirects straight to the IdP's
- *     `/authorize` (redirect_uri points back at `/my`);
+ *     `/authorize`, coming back to the page it was pressed on;
  *   - signed in  → a "マイページ" link to `/my`.
  *
  * Until the async session probe resolves it renders a disabled placeholder so
@@ -18,7 +18,6 @@ import {
   type SerializableValue,
 } from "@remix-run/component";
 
-import { IDP_ORIGIN } from "../idp.ts";
 import { sessionStore } from "../session.ts";
 import { actionStyle, primaryStyle } from "../theme.ts";
 
@@ -39,15 +38,7 @@ export const NavAuth = clientEntry(
       void sessionStore.load();
     }
 
-    const onSigninClick = () => {
-      const redirectUri =
-        new URL(handle.props.myHref, globalThis.location.origin).href;
-      const params = new URLSearchParams({
-        dpop_jkt: sessionStore.thumbprint,
-        redirect_uri: redirectUri,
-      });
-      globalThis.location.href = `${IDP_ORIGIN}/authorize?${params.toString()}`;
-    };
+    const onSigninClick = () => sessionStore.signIn();
 
     return () => {
       if (!sessionStore.ready) {

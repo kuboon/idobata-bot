@@ -150,6 +150,13 @@ RP 側にセッションは持たない（`docs/architecture.md`
   `Authorization: DPoP <jws>`（IdP の `/session` が返す token）を IdP の JWKS で
   検証し、`cnf.jkt` が proof の鍵と一致することを確かめて `context.get(User)` に
   置く。初回は `users` を作る（nickname の初期値は IdP の値）。
+- サインインは IdP の `/authorize`
+  へ行って戻る（`sessionStore.signIn()`。戻り先は 押したページの URL。IdP は
+  `redirect_uri` をホスト名で許可し、そのまま戻す）。 投稿ダイアログからは
+  `signInInNewTab()`: 別タブでサインインして `/?signin=done` に
+  戻り、`BroadcastChannel`
+  で元のタブに知らせて閉じる（下書き・会話はメモリにしか
+  無いので、元のタブは遷移させない）。
 - ブラウザは `sessionStore.apiFetch(path, init)`（`web/client/session.ts`）で
   呼ぶ。proof と token を付け、401 なら `/session` を取り直して 1
   回だけ再送する。
