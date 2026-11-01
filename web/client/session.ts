@@ -12,6 +12,12 @@
  *
  * Subscribe with `sessionStore.addEventListener("change", cb, { signal })`
  * using a clientEntry's `handle.signal` so the listener is removed on unmount.
+ *
+ * Signing in goes to the IdP and comes back. {@link signIn} does it in this tab and comes back to
+ * the same URL. {@link signInInNewTab} does it in another tab, for a page with something that only
+ * lives in memory (a chat, a draft in the posting dialog): the other tab lands on
+ * `/?signin=done`, tells this one over a `BroadcastChannel`, and closes itself; this tab then
+ * probes the session again.
  */
 
 import { init } from "@kuboon/dpop";
@@ -25,6 +31,11 @@ export type FetchDpop = (
 ) => Promise<Response>;
 
 type SessionEventMap = { change: Event };
+
+/** Tabs of this origin telling each other that the session changed. */
+const CHANNEL = "idobata-session";
+/** The query a sign-in in another tab returns with. */
+const SIGNED_IN_PARAM = "signin";
 
 class DpopSessionStore extends TypedEventTarget<SessionEventMap> {
   /** DPoP-bound fetch, available once {@link load} resolves (null if init failed). */
@@ -63,7 +74,75 @@ class DpopSessionStore extends TypedEventTarget<SessionEventMap> {
         this.ready = true;
         this.#emitChange();
       }
+      this.#listenToOtherTabs();
+      this.#finishSignInTab();
     })());
+  }
+
+  /** The IdP's sign-in page, coming back to `returnTo` (any URL of this origin). */
+  signInUrl(returnTo: string): string {
+    const params = new URLSearchParams({
+      dpop_jkt: this.thumbprint,
+      redirect_uri: returnTo,
+    });
+    return `${IDP_ORIGIN}/authorize?${params.toString()}`;
+  }
+
+  /** Signs in in this tab, coming back to the page it started from. */
+  signIn(): void {
+    globalThis.location.href = this.signInUrl(globalThis.location.href);
+  }
+
+  /**
+   * Signs in in another tab, so this page — and what it holds in memory — stays as it is. Call it
+   * from a click (a popup blocker lets a click open a tab). Falls back to this tab if the browser
+   * will not open one.
+   */
+  signInInNewTab(): void {
+    const returnTo = new URL(`/?${SIGNED_IN_PARAM}=done`, location.origin).href;
+    const tab = globalThis.open(this.signInUrl(returnTo), "_blank");
+    if (!tab) this.signIn();
+  }
+
+  /** Probes the session again and tells the subscribers if who is signed in changed. */
+  async refresh(): Promise<void> {
+    if (!this.fetchDpop) return;
+    const before = this.userId;
+    await this.#probe();
+    if (this.userId !== before) this.#emitChange();
+  }
+
+  /** A sign-in finished in another tab, or this tab came back into view: look again. */
+  #listenToOtherTabs(): void {
+    try {
+      new BroadcastChannel(CHANNEL).onmessage = () => void this.refresh();
+    } catch {
+      // No BroadcastChannel: coming back into view still catches it.
+    }
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "visible" && this.userId === null) {
+        void this.refresh();
+      }
+    });
+  }
+
+  /**
+   * In the tab {@link signInInNewTab} opened, once back from the IdP: tell the tab that opened it,
+   * and close. If it cannot close (opened some other way), it just stays on the page.
+   */
+  #finishSignInTab(): void {
+    const url = new URL(location.href);
+    if (url.searchParams.get(SIGNED_IN_PARAM) !== "done") return;
+    url.searchParams.delete(SIGNED_IN_PARAM);
+    history.replaceState(history.state, "", url.href);
+    try {
+      const channel = new BroadcastChannel(CHANNEL);
+      channel.postMessage("signed-in");
+      channel.close();
+    } catch {
+      // The opener notices when it comes back into view.
+    }
+    if (globalThis.opener) globalThis.close();
   }
 
   /** Sign out at the IdP, then notify every subscriber. */

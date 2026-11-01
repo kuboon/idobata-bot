@@ -124,10 +124,25 @@ export function PostDialog(handle: Handle<PostDialogProps>) {
 
   const close = () => handle.props.compose.finish({ kind: "closed" });
 
+  // The dialog is modal, so the navbar's Sign In is out of reach; and signing in in this tab would
+  // lose the draft and the chat, which live only in memory. So it signs in in another tab and
+  // comes back to this dialog as it is.
   const signInNote = (
-    <p data-kind="error" mix={alertStyle}>
-      投稿するにはサインインしてください（ナビバー右上の「Sign In」）。
-    </p>
+    <div data-kind="error" mix={[alertStyle, signInStyle]}>
+      <span>
+        投稿するにはサインインが必要です。サインインは新しいタブで開き、終わるとこの画面に戻ります（下書きはそのまま）。
+      </span>
+      <button
+        type="button"
+        mix={[
+          actionStyle,
+          primaryStyle,
+          on("click", () => sessionStore.signInInNewTab()),
+        ]}
+      >
+        サインイン / 登録
+      </button>
+    </div>
   );
 
   const errorNote = () =>
@@ -336,6 +351,12 @@ const bodyStyle = css({
 });
 
 const preWrapStyle = css({ whiteSpace: "pre-wrap" });
+
+const signInStyle = css({
+  display: "grid",
+  justifyItems: "start",
+  gap: "0.5rem",
+});
 
 const quoteStyle = css({
   margin: 0,
