@@ -54,6 +54,8 @@
     "@cloudflare/config": "npm:@cloudflare/config@0.25.0",
     "@kuboon/dpop": "jsr:@kuboon/dpop@^0.1.2",
     "@kuboon/md": "jsr:@kuboon/md@^0.9.0",
+    "@modelcontextprotocol/client": "npm:@modelcontextprotocol/client@^2.4.0",
+    "@modelcontextprotocol/server": "npm:@modelcontextprotocol/server@^2.4.0",
     "@kuboon/share-element": "jsr:@kuboon/share-element@^0.7.0",
     "@lightpanda/browser": "npm:@lightpanda/browser@^1.6.0",
     "@remix-kbn/assets-deno": "jsr:@remix-kbn/assets-deno@^0.9.0",
@@ -75,7 +77,8 @@
     "character-entities": "npm:character-entities@^2.0.2",
     "remark-gfm": "npm:remark-gfm@^4.0.1",
     "remark-parse": "npm:remark-parse@^11.0.0",
-    "unified": "npm:unified@^11.0.5"
+    "unified": "npm:unified@^11.0.5",
+    "zod": "npm:zod@^4.2.0"
   },
   "fmt": {
     "exclude": [

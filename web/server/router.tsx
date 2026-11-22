@@ -46,6 +46,7 @@ import { createMeController } from "./controllers/api/me.ts";
 import { createOpinionsController } from "./controllers/api/opinions.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
+import { createMcpController } from "./mcp/mod.ts";
 
 /**
  * The database: a local SQLite file when `LOCAL_DB` names one (`deno task dev` does), otherwise a
@@ -173,6 +174,7 @@ router.map(routes.api.me, createMeController());
 router.map(routes.api.docs, createDocsController());
 router.map(routes.api.opinions, createOpinionsController());
 router.map(routes.api.chat, createChatController());
+router.map(routes.mcp, createMcpController());
 
 router.get("/static/*path", ({ request }) => staticFiles.fetch(request));
 router.get(`${assetsPath}/*path`, ({ request }) => assets.fetch(request));

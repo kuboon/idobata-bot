@@ -41,6 +41,16 @@ export const routes = route("", {
   documentAdmin: get("/d/:docId/admin"),
   /** RP public JWKS — lets the IdP verify our `private_key_jwt` assertions. */
   jwks: get("/.well-known/jwks.json"),
+  /**
+   * The owner's remote MCP server (`server/mcp/`): one URL answering POST, GET and DELETE, with its
+   * RFC 9728 metadata where an MCP client looks for it.
+   */
+  mcp: route({
+    post: post("/mcp"),
+    get: get("/mcp"),
+    remove: del("/mcp"),
+    metadata: get("/.well-known/oauth-protected-resource/mcp"),
+  }),
   api: route("api", {
     /** Server-initiated push fan-out (delegates to the IdP). Not DPoP-protected. */
     notify: post("/notify"),

@@ -139,6 +139,21 @@ id.kbn.one を Web Push のバックエンドとして使う最小構成。購�
   （`controllers/api/chat.test.ts`）。
 - URL と `ChatDraft` の型は `packages/idobata-bot/chat.ts`。
 
+## MCP（オーナー向け）
+
+`docs/architecture.md` §11。`/mcp` が文書オーナーの管理操作を remote MCP で
+出す（`web/server/mcp/`。`@modelcontextprotocol/server` の `createMcpHandler`、
+stateless）。読者向けの操作は出さない。
+
+- 認証は id.kbn.one の OAuth（このサーバはリソースサーバ）。
+  `/.well-known/oauth-protected-resource/mcp` で IdP を示し、Bearer の access
+  token（`typ: at+jwt`、`aud` = このサーバの `/mcp`）を IdP の JWKS で検証、
+  `sub` を userId にする。
+- ツールは Web の API と同じ `lib/` の関数を呼び、オーナー確認も同じ
+  （`assertOwner`）。Web で管理操作を足したら、ここにも足す。
+- テストは公式の `@modelcontextprotocol/client` で通しで書く
+  （`mcp/mcp.test.ts`。access token はローカル鍵で作る）。
+
 ## 認証 (API)
 
 RP 側にセッションは持たない（`docs/architecture.md`

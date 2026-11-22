@@ -30,7 +30,13 @@ export default defineConfig((ctx) => ({
       // Only these reach the Worker; every other path is a static file.
       // `/d/*` is the document page: the Worker serves the static shell with the document's
       // title written in (`web/server/document_shell.ts`).
-      runWorkerFirst: ["/api/*", "/.well-known/jwks.json", "/d/*"],
+      runWorkerFirst: [
+        "/api/*",
+        "/.well-known/jwks.json",
+        "/d/*",
+        "/mcp",
+        "/.well-known/oauth-protected-resource/*",
+      ],
     },
     env: {
       IDP_ORIGIN: bindings.text("https://id.kbn.one"),
