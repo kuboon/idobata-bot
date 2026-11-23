@@ -466,3 +466,39 @@ DPoP proof は全 API で必須。🔒 はログイン必須、👑 はオーナ
 他サイトへの組み込み（[design.md §12](./design.md#12-確認したいこと)）では、
 iframe 内は DPoP 鍵の保存先が分離され IdP へのリダイレクトも使いにくいので、
 サインインは popup にし、CORS と `cop()` の `trustedOrigins` を設定する。
+
+## 11. MCP（オーナー向け）
+
+文書オーナーが自分の AI（Claude など）から管理操作をするための remote MCP
+サーバ。読者向けの操作（意見の投稿・賛同）は置かない。
+
+- **エンドポイント**: `/mcp`（POST / GET /
+  DELETE）。`@modelcontextprotocol/server` の `createMcpHandler`
+  で、リクエストごとにサーバを作る（stateless。2025 年版のクライアントにも
+  stateless で答える）。Worker でそのまま動く。
+- **認証**: id.kbn.one を OAuth 2.1 の認可サーバとして使う（CIMD、PKCE、RFC
+  8707）。このサーバはリソースサーバ:
+  - `/.well-known/oauth-protected-resource/mcp`（RFC 9728）で
+    `authorization_servers` に IdP を載せる
+  - token が無い・不正なら `401` と
+    `WWW-Authenticate: Bearer …, resource_metadata=…`
+  - Bearer の access token（ES256 JWT、`typ: at+jwt`）を IdP の JWKS で検証し、
+    `aud` がこのサーバの `/mcp` の URL（リクエストの origin から作る）である
+    ことを確かめる。`sub` が userId（Web のサインインと同じ）
+- **ツール**（`web/server/mcp/tools.ts`。Web の API と同じ
+  `lib/documents.ts`・`lib/opinions.ts`
+  を呼び、オーナーかどうかも同じく確かめる）:
+
+| ツール                    | 内容                                                         |
+| ------------------------- | ------------------------------------------------------------ |
+| `list_my_documents`       | 自分の文書の一覧                                             |
+| `get_document`            | 公開済みの版の Markdown と段落                               |
+| `create_document`         | 文書の登録                                                   |
+| `update_document`         | タイトル・説明・募集期日                                     |
+| `get_draft`               | 次の版の下書き（段落 ID の行付き）。無ければ最新版を出発点に |
+| `save_draft`              | 下書きの保存（ID の無い段落に振って返す）                    |
+| `discard_draft`           | 下書きの破棄                                                 |
+| `release_draft`           | 下書きのリリース                                             |
+| `list_opinions_for_owner` | 非表示も含む意見とモデレーションの記録                       |
+| `moderate_opinion`        | 非表示・再表示（理由必須、公開）                             |
+| `get_filter_stats`        | 前段フィルタが弾いた件数（30 日）                            |

@@ -31,6 +31,7 @@ import { createMeController } from "./controllers/api/me.ts";
 import { createOpinionsController } from "./controllers/api/opinions.ts";
 import { notifyAction } from "./controllers/api/notify.ts";
 import { jwksAction } from "./controllers/well_known.ts";
+import { createMcpController } from "./mcp/mod.ts";
 
 // `router.tsx` augments `RouterTypes` project-wide so every controller sees `context.render`. None
 // of the API controllers use it, and this router has no render middleware, so the controllers are
@@ -55,6 +56,7 @@ router.map(routes.api.me, createMeController() as never);
 router.map(routes.api.docs, createDocsController() as never);
 router.map(routes.api.opinions, createOpinionsController() as never);
 router.map(routes.api.chat, createChatController() as never);
+router.map(routes.mcp, createMcpController() as never);
 
 /** The bindings `cloudflare.config.ts` gives the Worker that the code reads directly. */
 interface WorkerEnv {

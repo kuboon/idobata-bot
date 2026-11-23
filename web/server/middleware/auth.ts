@@ -170,7 +170,10 @@ function userMiddleware(
  * The nickname starts as the IdP's and is this app's own from then on: a later change on the IdP
  * does not overwrite what the user set here (docs/design.md §5).
  */
-async function ensureUser(id: string, idpNickname: unknown): Promise<User> {
+export async function ensureUser(
+  id: string,
+  idpNickname: unknown,
+): Promise<User> {
   const db = getDb();
   const existing = await db.find(users, id);
   if (existing) return { id, nickname: existing.nickname };

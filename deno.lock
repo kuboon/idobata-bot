@@ -21,11 +21,13 @@
     "jsr:@std/internal@^1.0.12": "1.0.14",
     "jsr:@std/internal@^1.0.14": "1.0.14",
     "jsr:@std/path@^1.1.5": "1.1.6",
-    "npm:@anthropic-ai/sdk@0.128": "0.128.0",
+    "npm:@anthropic-ai/sdk@0.128": "0.128.0_zod@4.6.5",
     "npm:@cloudflare/build-output-utils@0.9.1": "0.9.1",
     "npm:@cloudflare/config@0.25.0": "0.25.0",
     "npm:@lightpanda/browser@*": "1.6.0",
     "npm:@lightpanda/browser@^1.6.0": "1.6.0",
+    "npm:@modelcontextprotocol/client@^2.4.0": "2.4.0",
+    "npm:@modelcontextprotocol/server@^2.4.0": "2.4.0",
     "npm:@remix-run/component@^1.1.0": "1.1.0",
     "npm:@remix-run/cop-middleware@1": "1.0.0",
     "npm:@remix-run/data-table@1": "1.0.0",
@@ -53,7 +55,8 @@
     "npm:remark-parse@11": "11.0.0",
     "npm:remark-rehype@^11.1.2": "11.1.2",
     "npm:unified@^11.0.5": "11.0.5",
-    "npm:unist-util-visit@^5.1.0": "5.2.0"
+    "npm:unist-util-visit@^5.1.0": "5.2.0",
+    "npm:zod@^4.2.0": "4.6.5"
   },
   "jsr": {
     "@deno/loader@0.5.0": {
@@ -163,11 +166,15 @@
     }
   },
   "npm": {
-    "@anthropic-ai/sdk@0.128.0": {
+    "@anthropic-ai/sdk@0.128.0_zod@4.6.5": {
       "integrity": "sha512-tl5cBFZC1jVFrTuQyvQObA4WmuNgcYVeXfriqOumgtLAHUm4gPUj18YnszBW60v0PrjDB8nBDOC6wd9CmHQFlA==",
       "dependencies": [
         "json-schema-to-ts",
-        "standardwebhooks"
+        "standardwebhooks",
+        "zod@4.6.5"
+      ],
+      "optionalPeers": [
+        "zod@4.6.5"
       ],
       "bin": true
     },
@@ -674,6 +681,31 @@
         "yargs@18.2.0"
       ],
       "bin": true
+    },
+    "@modelcontextprotocol/client@2.4.0": {
+      "integrity": "sha512-LgrD2OphHuG12vfKFKz6SOnq7bKHQmhGJIAYdD+MZBn2npHEyry6uD8zvktodtl5CQM85MO0anUyD9JwmUmxww==",
+      "dependencies": [
+        "@modelcontextprotocol/core",
+        "cross-spawn",
+        "eventsource",
+        "eventsource-parser",
+        "jose",
+        "pkce-challenge",
+        "zod@4.6.5"
+      ]
+    },
+    "@modelcontextprotocol/core@2.4.0": {
+      "integrity": "sha512-z8QBKqdfXLPzkLQuG4xp8hrVEMm1PZ1IgxMN2sMbJiFiAKOWXnAzogXn2W4aqIBlP1ea6U5yiqVquvUNM1Cj6Q==",
+      "dependencies": [
+        "zod@4.6.5"
+      ]
+    },
+    "@modelcontextprotocol/server@2.4.0": {
+      "integrity": "sha512-rgR9yxSaAJ+bcsi/XroT/S2AfPiIWloXAnrdfYSCms9ivVju0ishu/wW0J21Ho6+ZOR1r7RyeRbjiRuF87ix5Q==",
+      "dependencies": [
+        "@modelcontextprotocol/core",
+        "zod@4.6.5"
+      ]
     },
     "@napi-rs/wasm-runtime@1.2.5_@emnapi+core@1.11.2_@emnapi+runtime@1.11.2": {
       "integrity": "sha512-HshSvXzmBxNzqejd3k/KemgQ3hdREUYFRRrgxOZ+gPljDIsO2SDZrVZMd4Z/HsxudQbE62OVyVFE8z9BCurfjA==",
@@ -1463,6 +1495,14 @@
     "cookie@1.1.1": {
       "integrity": "sha512-ei8Aos7ja0weRpFzJnEA9UHJ/7XQmqglbRwnf2ATjcB9Wq874VKH9kfjjirM6UhU2/E5fFYadylyhFldcqSidQ=="
     },
+    "cross-spawn@7.0.6": {
+      "integrity": "sha512-uV2QOWP2nWzsy2aMp8aRibhi9dlzF5Hgh5SHaB9OiTGEyDTiJJyx0uy51QXdyWbtAHNua4XJzUKca3OzKUd3vA==",
+      "dependencies": [
+        "path-key",
+        "shebang-command",
+        "which"
+      ]
+    },
     "data-uri-to-buffer@6.0.2": {
       "integrity": "sha512-7hvf7/GW8e86rW0ptuwS3OcBGDjIi6SZva7hCyWC0yYry2cOPmLIjXAUHI6DK2HsnwJd9ifmt57i8eV2n4YNpw=="
     },
@@ -1554,6 +1594,15 @@
       "integrity": "sha512-LUd5euvbMLpwOF8m6ivPCbhQeSiYVNb8Vs0fQ8QjXo0JTkEHpz8pxdQf0gStltaPpw0Cca8b39KxvK9cfKRiAw==",
       "dependencies": [
         "bare-events"
+      ]
+    },
+    "eventsource-parser@3.1.1": {
+      "integrity": "sha512-EKN1vKAMcZ8MlYMpaNuxN6R9yakzH6uajHcHVTqWJzvu5pWw9DyhbP35HH8MVBQ+dZjAfDxk+A8NiR9KWaXiyQ=="
+    },
+    "eventsource@3.0.7": {
+      "integrity": "sha512-CRT1WTyuQoD771GW56XEZFQ/ZoSfWid1alKGDYMmkt2yl8UXrVR4pspqWNEcqKvVIzg6PAltWjxcSSPrboA4iA==",
+      "dependencies": [
+        "eventsource-parser"
       ]
     },
     "extend@3.0.2": {
@@ -1753,6 +1802,12 @@
     },
     "is-plain-obj@4.1.0": {
       "integrity": "sha512-+Pgi+vMuUNkJyExiMBt5IlFoMyKnr5zhJ4Uspz58WOhBF5QoIZkFyNHIbBAtHwzVAgk5RtndVNsDRN61/mmDqg=="
+    },
+    "isexe@2.0.0": {
+      "integrity": "sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw=="
+    },
+    "jose@6.2.18": {
+      "integrity": "sha512-doV4thUwgkrycJH4yLeqwTGIIZphHl+pk7CPReuMIhYhncmgzdko85MaCG4YQFTxqMFr1/oEH32tZuKKovcDEg=="
     },
     "json-schema-to-ts@3.1.1": {
       "integrity": "sha512-+DWg8jCJG2TEnpy7kOm/7/AxaYoaRbjVB4LFZLySZlWn8exGs3A4OLJR966cVvU26N7X9TWxl+Jsw7dzAqKT6g==",
@@ -2409,6 +2464,9 @@
         "entities"
       ]
     },
+    "path-key@3.1.1": {
+      "integrity": "sha512-ojmeN0qd+y0jszEtoY48r0Peq5dwMEkIlCOu6Q5f41lfkswXuKtYrhgoTpLnyIcHm24Uhqx+5Tqm2InSwLhE6Q=="
+    },
     "pele@1.12.0": {
       "integrity": "sha512-3OdOK6rvkaTB569R4/I8U0H82MqPRxj7vfkbowa2rRhgSBPFhvWlfFy5eae0jP+2A6hE8abE17nsdyxJz2VBiQ=="
     },
@@ -2417,6 +2475,9 @@
     },
     "picomatch@4.0.7": {
       "integrity": "sha512-qcJu88Q2IWqJsDD529JKMdwGm/dvInW4HvQnRwiH9JtihJvzGOscDtHE3x1pBKeUOTysQ8kVmLnJ2kJu7yhcGA=="
+    },
+    "pkce-challenge@5.0.1": {
+      "integrity": "sha512-wQ0b/W4Fr01qtpHlqSqspcj3EhBvimsdh0KlHhH8HRZnMsEa0ea2fTULOXOS9ccQr3om+GcGRk4e+isrZWV8qQ=="
     },
     "progress@2.0.3": {
       "integrity": "sha512-7PiHtLll5LdnKIMw100I+8xJXR5gW2QwWYkT6iJva0bXitZKa/XMrSbdmg3r2Xnaidz9Qumd0VPaMrZlF9V9sA=="
@@ -2606,6 +2667,15 @@
         "@img/sharp-win32-ia32@0.35.5",
         "@img/sharp-win32-x64@0.35.5"
       ]
+    },
+    "shebang-command@2.0.0": {
+      "integrity": "sha512-kHxr2zZpYtdmrN1qDjrrX/Z1rR1kG8Dx+gkpK1G4eXmvXswmcE1hTWBWYUzlraYw1/yZp6YuDY77YtvbN0dmDA==",
+      "dependencies": [
+        "shebang-regex"
+      ]
+    },
+    "shebang-regex@3.0.0": {
+      "integrity": "sha512-7++dFhtcx3353uBaq8DDR4NuxBetBzC7ZQOhmTQInHEd6bSrXdiEyzCvG07Z44UYdLShWUyXt5M/yhz8ekcb1A=="
     },
     "smart-buffer@4.2.0": {
       "integrity": "sha512-94hK0Hh8rPqQl2xXc3HsaBoOXKV20MToPkcXvwbISWLEs+64sBq5kFgn2kJDHb1Pry9yrP0dxrCI9RRci7RXKg=="
@@ -2836,6 +2906,13 @@
     "web-namespaces@2.0.1": {
       "integrity": "sha512-bKr1DkiNa2krS7qxNtdrtHAmzuYGFQLiQ13TsorsdT6ULTkPLKuu5+GsFpDlg6JFjUTwX2DyhMPG2be8uPrqsQ=="
     },
+    "which@2.0.2": {
+      "integrity": "sha512-BLI3Tl1TW3Pvl70l3yq3Y64i+awpwXqsGBYWkkqMtnbXgrMD+yj7rhW0kuEDxzJaYXGjEW5ogapKNMEKNMjibA==",
+      "dependencies": [
+        "isexe"
+      ],
+      "bin": true
+    },
     "workerd@1.20260921.1": {
       "integrity": "sha512-4HyG7G1W4ksa6tUZ8bV2jxDRWuL5PXnHm9+Z1sjFPb9OZNoYtXz4y7QQRh4ibi0BF/lOmlAVjbhkUqsAVZuUKA==",
       "optionalDependencies": [
@@ -2977,6 +3054,8 @@
       "npm:@cloudflare/build-output-utils@0.9.1",
       "npm:@cloudflare/config@0.25.0",
       "npm:@lightpanda/browser@^1.6.0",
+      "npm:@modelcontextprotocol/client@^2.4.0",
+      "npm:@modelcontextprotocol/server@^2.4.0",
       "npm:@remix-run/component@^1.1.0",
       "npm:@remix-run/cop-middleware@1",
       "npm:@remix-run/data-table@1",
@@ -2990,7 +3069,8 @@
       "npm:puppeteer-core@^23.11.1",
       "npm:remark-gfm@^4.0.1",
       "npm:remark-parse@11",
-      "npm:unified@^11.0.5"
+      "npm:unified@^11.0.5",
+      "npm:zod@^4.2.0"
     ]
   }
 }
